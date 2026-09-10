@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { Lock, User, Shield, KeyRound, AlertTriangle, FileKey } from 'lucide-react';
+import { Lock, User, Shield, AlertTriangle, KeyRound } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
@@ -37,80 +37,51 @@ export default function Login() {
       alignItems: 'center',
       justifyContent: 'center',
       background: 'var(--bg-base)',
-      padding: '20px',
-      position: 'relative'
+      padding: '24px'
     }}>
-      {/* Precision Grid Pattern Background Overlay */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        backgroundImage: 'linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px)',
-        backgroundSize: '24px 24px',
-        pointerEvents: 'none'
-      }} />
-
       <div style={{
         width: '100%',
-        maxWidth: '400px',
+        maxWidth: '380px',
         background: 'var(--bg-surface)',
-        border: '1px solid var(--border-strong)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-overlay)',
-        padding: '28px 24px',
-        position: 'relative',
-        zIndex: 1
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-xl)',
+        boxShadow: 'var(--shadow-md)',
+        padding: '32px 28px',
       }}>
-        {/* Security Classification Badge Header */}
-        <div style={{
-          fontFamily: 'JetBrains Mono, monospace',
-          fontSize: '0.62rem',
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '0.1em',
-          background: 'var(--bg-base)',
-          color: 'var(--status-amber)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '4px 8px',
-          textAlign: 'center',
-          marginBottom: '20px'
-        }}>
-          RESTRICTED SYSTEM // AUTHENTICATION GATEWAY
-        </div>
-
-        {/* Branding & Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+        {/* Branding & Header */}
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{
             width: '40px',
             height: '40px',
-            background: 'var(--accent-blue)',
+            background: 'var(--text-primary)',
             color: 'white',
-            borderRadius: 'var(--radius-md)',
+            borderRadius: 'var(--radius-lg)',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: '10px'
+            marginBottom: '12px',
+            boxShadow: 'var(--shadow-xs)'
           }}>
             <Shield size={20} />
           </div>
-          <h1 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
             AI-CRMS
           </h1>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            Criminal Intelligence Management Platform
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            Criminal Intelligence Management System
           </p>
         </div>
 
-        {/* System Access Presets Panel */}
+        {/* Quick Demo Access Credentials */}
         <div style={{
-          background: 'var(--bg-card)',
+          background: 'var(--bg-elevated)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--radius-md)',
           padding: '10px 12px',
-          marginBottom: '18px'
+          marginBottom: '20px'
         }}>
-          <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <FileKey size={12} /> System Access Presets
+          <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <KeyRound size={12} /> Quick Demo Access
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
             {[
@@ -123,7 +94,7 @@ export default function Login() {
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => quickLogin(u, p)}
-                style={{ fontSize: '0.72rem', padding: '3px 4px' }}
+                style={{ fontSize: '0.72rem', padding: '4px 6px' }}
               >
                 {role}
               </button>
@@ -143,10 +114,10 @@ export default function Login() {
           <div className="form-group">
             <label className="form-label">Username</label>
             <div style={{ position: 'relative' }}>
-              <User size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <User size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 className="form-control"
-                style={{ paddingLeft: '32px' }}
+                style={{ paddingLeft: '36px' }}
                 type="text"
                 placeholder="Enter username"
                 value={form.username}
@@ -157,13 +128,13 @@ export default function Login() {
             </div>
           </div>
 
-          <div className="form-group" style={{ marginBottom: '20px' }}>
+          <div className="form-group" style={{ marginBottom: '24px' }}>
             <label className="form-label">Password</label>
             <div style={{ position: 'relative' }}>
-              <Lock size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <Lock size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 className="form-control"
-                style={{ paddingLeft: '32px' }}
+                style={{ paddingLeft: '36px' }}
                 type="password"
                 placeholder="Enter password"
                 value={form.password}
@@ -183,20 +154,20 @@ export default function Login() {
             {loading ? (
               <><span className="spinner" /> Authenticating...</>
             ) : (
-              <><Shield size={15} /> Verify Access</>
+              'Sign In'
             )}
           </button>
         </form>
 
-        <div className="mono" style={{
+        <div style={{
           textAlign: 'center',
-          fontSize: '0.62rem',
+          fontSize: '0.7rem',
           color: 'var(--text-muted)',
-          marginTop: '18px',
-          paddingTop: '12px',
-          borderTop: '1px solid var(--border)'
+          marginTop: '20px',
+          paddingTop: '16px',
+          borderTop: '1px solid var(--border-subtle)'
         }}>
-          COMPLIANCE NOTICE: ALL SESSIONS LOGGED & AUDITED
+          Authorized Personnel Only
         </div>
       </div>
     </div>

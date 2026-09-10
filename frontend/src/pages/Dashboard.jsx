@@ -22,12 +22,12 @@ const CHART_DEFAULTS = {
   maintainAspectRatio: false,
   plugins: {
     legend: {
-      labels: { color: '#667085', font: { family: 'Inter', size: 11 } }
+      labels: { color: '#475467', font: { family: 'Inter', size: 11 } }
     }
   },
   scales: {
-    x: { ticks: { color: '#667085', font: { size: 10, family: 'Inter' } }, grid: { color: '#F2F4F7' } },
-    y: { ticks: { color: '#667085', font: { size: 10, family: 'Inter' } }, grid: { color: '#F2F4F7' } }
+    x: { ticks: { color: '#98A2B3', font: { size: 10, family: 'Inter' } }, grid: { color: '#F2F4F7' } },
+    y: { ticks: { color: '#98A2B3', font: { size: 10, family: 'Inter' } }, grid: { color: '#F2F4F7' } }
   }
 };
 
@@ -74,15 +74,15 @@ export default function Dashboard() {
       data: Object.values(crimeTypes).slice(0, 8),
       backgroundColor: '#2563EB',
       borderColor: '#1D4ED8',
-      borderWidth: 1,
-      borderRadius: 4,
+      borderWidth: 0,
+      borderRadius: 6,
     }]
   };
 
   const statusColors = {
     open: '#2563EB',
-    under_investigation: '#B45309',
-    closed: '#15803D',
+    under_investigation: '#D97706',
+    closed: '#16A34A',
     archived: '#98A2B3',
   };
 
@@ -101,7 +101,7 @@ export default function Dashboard() {
       label: 'Cases Filed',
       data: (stats?.monthly_cases || []).map(m => m.cases),
       borderColor: '#2563EB',
-      backgroundColor: 'rgba(37, 99, 235, 0.08)',
+      backgroundColor: 'rgba(37, 99, 235, 0.05)',
       fill: true,
       tension: 0.2,
       pointBackgroundColor: '#2563EB',
@@ -116,8 +116,8 @@ export default function Dashboard() {
       data: (stats?.officer_workload || []).map(o => o.cases),
       backgroundColor: '#6366F1',
       borderColor: '#4F46E5',
-      borderWidth: 1,
-      borderRadius: 4,
+      borderWidth: 0,
+      borderRadius: 6,
     }]
   };
 
@@ -125,30 +125,30 @@ export default function Dashboard() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Command Center Overview</h1>
-          <p className="page-subtitle">Real-time intelligence barometer for {user?.full_name}</p>
+          <h1 className="page-title">Command Center</h1>
+          <p className="page-subtitle">Welcome back, {user?.full_name}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary" onClick={() => navigate('/criminals')}>
-            <Plus size={13} /> Add Record
+            <Plus size={14} /> Add Offender
           </button>
           <button className="btn btn-primary" onClick={() => navigate('/cases')}>
-            <FolderPlus size={13} /> New Case
+            <FolderPlus size={14} /> New Case
           </button>
         </div>
       </div>
 
       {/* High-Risk Banner */}
       {stats?.high_risk_criminals > 0 && (
-        <div className="alert alert-error" style={{ justifyContent: 'space-between', padding: '10px 14px', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="alert alert-error" style={{ justifyContent: 'space-between', padding: '12px 16px', marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <AlertTriangle size={16} />
             <div>
-              <div style={{ fontWeight: 700 }}>
+              <div style={{ fontWeight: 600 }}>
                 {stats.high_risk_criminals} High-Risk Criminal Profiles Flagged
               </div>
-              <div style={{ fontSize: '0.72rem', opacity: 0.85 }}>
-                {stats.pending_reviews} AI risk predictions pending officer review
+              <div style={{ fontSize: '0.75rem', opacity: 0.85, marginTop: 1 }}>
+                {stats.pending_reviews} AI risk predictions pending review
               </div>
             </div>
           </div>
@@ -160,31 +160,31 @@ export default function Dashboard() {
 
       {/* Barometer KPI Grid */}
       <div className="stats-grid">
-        <StatCard icon={Shield} value={stats?.total_criminals} label="Offender Dossiers" subtext="Registered record profiles" onClick={() => navigate('/criminals')} />
-        <StatCard icon={FileText} value={stats?.total_cases} label="Total Cases" subtext="FIR & Investigation files" onClick={() => navigate('/cases')} />
-        <StatCard icon={Activity} value={stats?.open_cases} label="Open Investigations" subtext="Active officer cases" onClick={() => navigate('/cases?status=open')} />
-        <StatCard icon={AlertTriangle} value={stats?.high_risk_criminals} label="High-Risk Offenders" subtext="Critical threat rating" onClick={() => navigate('/alerts')} />
-        <StatCard icon={Brain} value={stats?.pending_reviews} label="AI Reviews Pending" subtext="Model decision queues" onClick={() => navigate('/ai-predictions')} />
-        <StatCard icon={Siren} value={stats?.unread_alerts} label="System Flags" subtext="Unread operational alerts" onClick={() => navigate('/alerts')} />
+        <StatCard icon={Shield} value={stats?.total_criminals} label="Offender Dossiers" subtext="Registered profiles" onClick={() => navigate('/criminals')} />
+        <StatCard icon={FileText} value={stats?.total_cases} label="Total Cases" subtext="FIR & case files" onClick={() => navigate('/cases')} />
+        <StatCard icon={Activity} value={stats?.open_cases} label="Open Cases" subtext="Active investigations" onClick={() => navigate('/cases?status=open')} />
+        <StatCard icon={AlertTriangle} value={stats?.high_risk_criminals} label="High Risk" subtext="Critical threat rating" onClick={() => navigate('/alerts')} />
+        <StatCard icon={Brain} value={stats?.pending_reviews} label="AI Reviews" subtext="Pending officer action" onClick={() => navigate('/ai-predictions')} />
+        <StatCard icon={Siren} value={stats?.unread_alerts} label="Alerts" subtext="Unread operational flags" onClick={() => navigate('/alerts')} />
       </div>
 
       {/* Model Precision Rating & Trend Line */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: 14, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: 16, marginBottom: 20 }}>
         <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', margin: 0 }}>
-          <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 6 }}>
+          <div style={{ fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 8 }}>
             Model Precision Rating
           </div>
-          <div style={{ fontSize: '2.2rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--status-emerald)', lineHeight: 1 }}>
+          <div style={{ fontSize: '2.4rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--status-emerald)', lineHeight: 1 }}>
             {stats?.prediction_accuracy ?? 0}%
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 6 }}>
-            Verified by officer reviews
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8 }}>
+            Verified by officer feedback
           </div>
         </div>
 
         <div className="card" style={{ margin: 0 }}>
-          <div className="card-title" style={{ marginBottom: 10 }}>
-            <Activity size={14} style={{ color: 'var(--accent-blue)' }} /> Monthly Case Filings Trend
+          <div className="card-title" style={{ marginBottom: 12 }}>
+            <Activity size={15} style={{ color: 'var(--accent-blue)' }} /> Monthly Case Filings
           </div>
           <div style={{ height: 130 }}>
             <Line data={lineData} options={{ ...CHART_DEFAULTS, plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } } }} />
@@ -193,10 +193,10 @@ export default function Dashboard() {
       </div>
 
       {/* Visual Analytics Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <div className="card" style={{ margin: 0 }}>
-          <div className="card-title" style={{ marginBottom: 10 }}>
-            <Shield size={14} style={{ color: 'var(--accent-blue)' }} /> Crime Category Distribution
+          <div className="card-title" style={{ marginBottom: 12 }}>
+            <Shield size={15} style={{ color: 'var(--accent-blue)' }} /> Offence Distribution
           </div>
           <div style={{ height: 200 }}>
             <Bar data={barData} options={{
@@ -208,21 +208,21 @@ export default function Dashboard() {
         </div>
 
         <div className="card" style={{ margin: 0 }}>
-          <div className="card-title" style={{ marginBottom: 10 }}>
-            <FileText size={14} style={{ color: 'var(--accent-blue)' }} /> Case Status Breakdown
+          <div className="card-title" style={{ marginBottom: 12 }}>
+            <FileText size={15} style={{ color: 'var(--accent-blue)' }} /> Case Status Breakdown
           </div>
           <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Doughnut data={doughnutData} options={{
               ...CHART_DEFAULTS,
-              cutout: '72%',
+              cutout: '75%',
               scales: undefined
             }} />
           </div>
         </div>
 
         <div className="card" style={{ margin: 0 }}>
-          <div className="card-title" style={{ marginBottom: 10 }}>
-            <Users size={14} style={{ color: 'var(--accent-blue)' }} /> Officer Case Distribution
+          <div className="card-title" style={{ marginBottom: 12 }}>
+            <Users size={15} style={{ color: 'var(--accent-blue)' }} /> Officer Workload
           </div>
           <div style={{ height: 200 }}>
             <Bar data={officerData} options={{
