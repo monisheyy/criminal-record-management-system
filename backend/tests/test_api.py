@@ -17,23 +17,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.main import app
-from app.database import Base, get_db
+from app.database import Base, get_db, engine, SessionLocal
 from app.security import get_password_hash
 
-# ── In-memory test database ────────────────────────────────────────────────────
-TEST_DB_URL = "sqlite:///:memory:"
-
-engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
 def override_get_db():
-    db = TestingSessionLocal()
+    db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
 
 app.dependency_overrides[get_db] = override_get_db
 
@@ -44,25 +36,25 @@ app.dependency_overrides[get_db] = override_get_db
 def setup_db():
     """Create schema and seed test users once for the whole module."""
     Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
+    db = SessionLocal()
 
     from app.models import User, UserRole
-    users = [
-        User(username="admin_test", email="admin@test.com", full_name="Admin User",
-             hashed_password=get_password_hash("adminpass"), role=UserRole.admin),
-        User(username="officer_test", email="officer@test.com", full_name="Officer User",
-             hashed_password=get_password_hash("officerpass"), role=UserRole.investigating_officer),
-        User(username="clerk_test", email="clerk@test.com", full_name="Clerk User",
-             hashed_password=get_password_hash("clerkpass"), role=UserRole.record_clerk),
-    ]
-    for u in users:
-        db.add(u)
-    db.commit()
+    # Add test users if not present
+    if not db.query(User).filter_by(username="admin_test").first():
+        users = [
+            User(username="admin_test", email="admin@test.com", full_name="Admin User",
+                 hashed_password=get_password_hash("adminpass"), role=UserRole.admin),
+            User(username="officer_test", email="officer@test.com", full_name="Officer User",
+                 hashed_password=get_password_hash("officerpass"), role=UserRole.investigating_officer),
+            User(username="clerk_test", email="clerk@test.com", full_name="Clerk User",
+                 hashed_password=get_password_hash("clerkpass"), role=UserRole.record_clerk),
+        ]
+        for u in users:
+            db.add(u)
+        db.commit()
     db.close()
 
     yield
-
-    Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture(scope="module")
@@ -464,12 +456,12 @@ class TestAIReview:
         assert data["override_crime_type"] == "Arms Trafficking"
         assert data["officer_remarks"] == "Override based on new intelligence report."
 
-    def test_clerk_cannot_review_prediction(self, client, clerk_token, created_criminal_id):
+    def test_clerk_cannot_review_prediction(self, client, admin_token, clerk_token, created_criminal_id):
         # Create a fresh prediction
         pred_res = client.post(
             "/api/ai/predict",
             json={"criminal_id": created_criminal_id},
-            headers={"Authorization": f"Bearer {admin_token := _login(client, 'admin_test', 'adminpass')}"},
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         pred_id = pred_res.json()["id"]
 

@@ -5,7 +5,7 @@ import { notificationsAPI } from '../services/api';
 import {
   LayoutDashboard, Users, FileText, Shield,
   Brain, Bell, LogOut, Siren, BookOpen, Activity, Database, CheckCheck,
-  Search, Lock, Wifi
+  Lock
 } from 'lucide-react';
 
 const NAV = [
@@ -71,9 +71,9 @@ function NotificationPanel({ onClose }) {
   return (
     <div className="notification-dropdown">
       <div className="notif-header">
-        <span className="notif-header-title">System Notifications</span>
+        <span className="notif-header-title">Notifications</span>
         <button className="btn btn-ghost btn-sm" onClick={markAllRead}>
-          <CheckCheck size={13} /> Mark all read
+          <CheckCheck size={13} /> Mark read
         </button>
       </div>
       {loading ? (
@@ -148,21 +148,21 @@ export default function Layout({ children }) {
 
   return (
     <div className="app-layout">
-      {/* Enterprise Sidebar */}
+      {/* Minimalistic Sidebar */}
       <nav className="sidebar">
         <div className="sidebar-brand">
           <div className="sidebar-brand-icon">
-            <Shield size={16} />
+            <Shield size={15} />
           </div>
           <div>
             <div className="sidebar-brand-title">AI-CRMS</div>
-            <div className="sidebar-brand-sub">INTELLIGENCE PLATFORM</div>
+            <div className="sidebar-brand-sub">Platform</div>
           </div>
         </div>
 
         <div className="sidebar-classification-banner">
-          <Lock size={11} style={{ flexShrink: 0 }} />
-          <span>Restricted access</span>
+          <Lock size={11} style={{ flexShrink: 0, opacity: 0.7 }} />
+          <span>Restricted environment</span>
         </div>
 
         <div className="sidebar-nav">
@@ -204,15 +204,15 @@ export default function Layout({ children }) {
         </div>
       </nav>
 
-      {/* Command Bar Header */}
+      {/* Header */}
       <header className="header">
         <div className="header-status">
           <div className="header-status-indicator">
             <span className="status-dot" />
             <span>Operational</span>
           </div>
-          <span className="header-status-divider">|</span>
-          <span style={{ color: 'var(--text-secondary)' }}>Secure connection</span>
+          <span className="header-status-divider">/</span>
+          <span style={{ color: 'var(--text-secondary)' }}>Live Connection</span>
         </div>
 
         <div className="header-controls">
@@ -222,7 +222,7 @@ export default function Layout({ children }) {
               onClick={() => setShowNotifs(s => !s)}
               title="Notifications"
             >
-              <Bell size={14} />
+              <Bell size={15} />
               {unreadCount > 0 && <span className="notif-badge-dot" />}
             </button>
             {showNotifs && <NotificationPanel onClose={() => setShowNotifs(false)} />}
