@@ -14,14 +14,14 @@ export function getRiskBadgeClass(level) {
 
 export function RiskBadge({ score, level, showBar = false }) {
   const lvl = level || getRiskColor(score);
-  const colorMap = { critical: '#DC2626', high: '#17202A', medium: '#17202A', low: '#17202A' };
-  const color = colorMap[lvl] || '#17202A';
+  const colorMap = { critical: '#DC2626', high: '#EA580C', medium: '#D97706', low: '#16A34A' };
+  const color = colorMap[lvl] || '#475467';
 
   return (
     <div className="risk-score-wrapper">
       <span className={`risk-score-num ${lvl}`}>
         {score?.toFixed ? score.toFixed(0) : score}
-        {score !== undefined && <span style={{ fontSize: '0.7em', opacity: 0.5 }}>/100</span>}
+        {score !== undefined && <span style={{ fontSize: '0.7em', color: 'var(--text-muted)' }}>/100</span>}
       </span>
       {showBar && (
         <div className="risk-bar">
