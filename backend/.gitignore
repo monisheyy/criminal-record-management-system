@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.env/
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# Local databases (never commit DB files)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment secrets (keep .env.example, not .env)
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# ML saved models (regenerated at startup)
+app/ml/saved_models/*.pkl

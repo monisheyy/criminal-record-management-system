@@ -1,0 +1,312 @@
+from sqlalchemy import (
+    Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Enum, JSON
+)
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+import enum
+from app.database import Base
+
+
+class UserRole(str, enum.Enum):
+    admin = "admin"
+    investigating_officer = "investigating_officer"
+    record_clerk = "record_clerk"
+
+
+class CaseStatus(str, enum.Enum):
+    open = "open"
+    under_investigation = "under_investigation"
+    closed = "closed"
+    archived = "archived"
+
+
+class PredictionStatus(str, enum.Enum):
+    pending = "pending"
+    confirmed = "confirmed"
+    rejected = "rejected"
+    overridden = "overridden"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, nullable=False)
+    full_name = Column(String(100), nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(Enum(UserRole), nullable=False, default=UserRole.record_clerk)
+    badge_number = Column(String(20), nullable=True)
+    department = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    cases_assigned = relationship("Case", back_populates="assigned_officer", foreign_keys="Case.assigned_officer_id")
+    audit_logs = relationship("AuditLog", back_populates="user")
+    ai_reviews = relationship("AIPrediction", back_populates="reviewed_by_officer")
+
+
+class Gang(Base):
+    __tablename__ = "gangs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False)
+    alias = Column(String(200), nullable=True)
+    territory = Column(String(200), nullable=True)
+    threat_level = Column(String(20), default="medium")  # low, medium, high, critical
+    active_since = Column(DateTime(timezone=True), nullable=True)
+    known_activities = Column(Text, nullable=True)
+    member_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    members = relationship("Criminal", back_populates="gang")
+
+
+class Criminal(Base):
+    __tablename__ = "criminals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    crn = Column(String(20), unique=True, index=True, nullable=False)  # Criminal Record Number
+    first_name = Column(String(50), nullable=False)
+    last_name = Column(String(50), nullable=False)
+    alias = Column(String(200), nullable=True)
+    date_of_birth = Column(DateTime(timezone=True), nullable=True)
+    gender = Column(String(10), nullable=True)
+    nationality = Column(String(50), nullable=True)
+    address = Column(Text, nullable=True)
+    phone = Column(String(20), nullable=True)
+    email = Column(String(100), nullable=True)
+    occupation = Column(String(100), nullable=True)
+    photo_url = Column(String(500), nullable=True)
+    fingerprint_id = Column(String(100), nullable=True)
+
+    # Crime profile
+    crime_type = Column(String(100), nullable=True)
+    crime_category = Column(String(50), nullable=True)
+    prior_convictions = Column(Integer, default=0)
+    modus_operandi = Column(Text, nullable=True)
+    known_associates = Column(Text, nullable=True)
+
+    # Gang affiliation
+    gang_id = Column(Integer, ForeignKey("gangs.id"), nullable=True)
+    gang_rank = Column(String(50), nullable=True)
+
+    # Status
+    is_wanted = Column(Boolean, default=False)
+    is_incarcerated = Column(Boolean, default=False)
+    threat_level = Column(String(20), default="low")
+    risk_score = Column(Float, default=0.0)
+
+    # Metadata
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    gang = relationship("Gang", back_populates="members")
+    cases = relationship("CaseCriminal", back_populates="criminal")
+    ai_predictions = relationship("AIPrediction", back_populates="criminal")
+    history_records = relationship("CriminalHistory", back_populates="criminal")
+
+
+class CriminalHistory(Base):
+    __tablename__ = "criminal_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    criminal_id = Column(Integer, ForeignKey("criminals.id"), nullable=False)
+    event_type = Column(String(50), nullable=False)  # arrest, conviction, release, etc.
+    description = Column(Text, nullable=True)
+    date = Column(DateTime(timezone=True), nullable=True)
+    location = Column(String(200), nullable=True)
+    case_reference = Column(String(50), nullable=True)
+    recorded_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    criminal = relationship("Criminal", back_populates="history_records")
+
+
+class Case(Base):
+    __tablename__ = "cases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_number = Column(String(30), unique=True, index=True, nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    crime_type = Column(String(100), nullable=True)
+    crime_category = Column(String(50), nullable=True)
+    location = Column(String(200), nullable=True)
+    incident_date = Column(DateTime(timezone=True), nullable=True)
+    status = Column(Enum(CaseStatus), default=CaseStatus.open)
+    priority = Column(String(20), default="normal")  # low, normal, high, critical
+
+    # FIR
+    fir_number = Column(String(30), nullable=True)
+    fir_date = Column(DateTime(timezone=True), nullable=True)
+    fir_filed_by = Column(String(100), nullable=True)
+    fir_station = Column(String(100), nullable=True)
+    complainant_name = Column(String(100), nullable=True)
+    complainant_contact = Column(String(20), nullable=True)
+
+    # Assignment
+    assigned_officer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+
+    assigned_officer = relationship("User", back_populates="cases_assigned", foreign_keys=[assigned_officer_id])
+    criminals = relationship("CaseCriminal", back_populates="case")
+    evidence = relationship("Evidence", back_populates="case")
+    victims = relationship("Victim", back_populates="case")
+    ai_predictions = relationship("AIPrediction", back_populates="case")
+
+
+class CaseCriminal(Base):
+    __tablename__ = "case_criminals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    criminal_id = Column(Integer, ForeignKey("criminals.id"), nullable=False)
+    role = Column(String(50), nullable=True)  # suspect, accused, convicted
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    case = relationship("Case", back_populates="criminals")
+    criminal = relationship("Criminal", back_populates="cases")
+
+
+class Evidence(Base):
+    __tablename__ = "evidence"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    evidence_number = Column(String(30), nullable=False)
+    type = Column(String(50), nullable=True)  # physical, digital, forensic, witness
+    description = Column(Text, nullable=True)
+    location_found = Column(String(200), nullable=True)
+    collected_by = Column(String(100), nullable=True)
+    collected_at = Column(DateTime(timezone=True), nullable=True)
+    chain_of_custody = Column(Text, nullable=True)
+    status = Column(String(30), default="collected")
+    file_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    case = relationship("Case", back_populates="evidence")
+
+
+class Victim(Base):
+    __tablename__ = "victims"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    first_name = Column(String(50), nullable=False)
+    last_name = Column(String(50), nullable=False)
+    age = Column(Integer, nullable=True)
+    gender = Column(String(10), nullable=True)
+    address = Column(Text, nullable=True)
+    phone = Column(String(20), nullable=True)
+    injury_description = Column(Text, nullable=True)
+    status = Column(String(30), default="alive")  # alive, deceased, hospitalized
+    statement = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    case = relationship("Case", back_populates="victims")
+
+
+class AIPrediction(Base):
+    __tablename__ = "ai_predictions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    criminal_id = Column(Integer, ForeignKey("criminals.id"), nullable=True)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=True)
+
+    # Prediction results
+    predicted_crime_type = Column(String(100), nullable=True)
+    crime_type_confidence = Column(Float, default=0.0)
+    gang_affiliation_probability = Column(Float, default=0.0)
+    predicted_gang_id = Column(Integer, ForeignKey("gangs.id"), nullable=True)
+    risk_score = Column(Float, default=0.0)
+    risk_level = Column(String(20), default="low")
+    confidence_overall = Column(Float, default=0.0)
+
+    # Similar records
+    similar_criminals = Column(JSON, nullable=True)  # list of criminal ids + scores
+    similar_cases = Column(JSON, nullable=True)
+
+    # Feature inputs used
+    input_features = Column(JSON, nullable=True)
+
+    # Officer review
+    review_status = Column(Enum(PredictionStatus), default=PredictionStatus.pending)
+    reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    officer_remarks = Column(Text, nullable=True)
+    override_crime_type = Column(String(100), nullable=True)
+
+    # Model version
+    model_version = Column(String(20), default="v1.0")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    criminal = relationship("Criminal", back_populates="ai_predictions")
+    case = relationship("Case", back_populates="ai_predictions")
+    reviewed_by_officer = relationship("User", back_populates="ai_reviews")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    notification_type = Column(String(30), default="info")  # info, warning, alert, success
+    is_read = Column(Boolean, default=False)
+    target_role = Column(String(30), nullable=True)  # null = all, or specific role
+    target_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    related_criminal_id = Column(Integer, ForeignKey("criminals.id"), nullable=True)
+    related_case_id = Column(Integer, ForeignKey("cases.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    username = Column(String(50), nullable=True)
+    action = Column(String(100), nullable=False)
+    resource_type = Column(String(50), nullable=True)
+    resource_id = Column(Integer, nullable=True)
+    details = Column(JSON, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="audit_logs")
+
+
+class MLModel(Base):
+    __tablename__ = "ml_models"
+
+    id = Column(Integer, primary_key=True, index=True)
+    version = Column(String(20), nullable=False)
+    model_type = Column(String(50), nullable=False)  # crime_classifier, gang_predictor
+    accuracy = Column(Float, default=0.0)
+    precision_score = Column(Float, default=0.0)
+    recall_score = Column(Float, default=0.0)
+    f1_score = Column(Float, default=0.0)
+    training_samples = Column(Integer, default=0)
+    feature_importances = Column(JSON, nullable=True)
+    trained_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(Boolean, default=True)
+    notes = Column(Text, nullable=True)
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String(50), primary_key=True, index=True)
+    value = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
