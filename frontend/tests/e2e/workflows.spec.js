@@ -9,7 +9,7 @@ test('unauthenticated users are sent to sign-in and no token is stored in the pa
   await signIn(page, 'admin');
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }));
   expect(stored).not.toMatch(/eyJ/); // no JWT anywhere in localStorage
-  const cookies = await page.context().cookies('http://localhost:8000');
+  const cookies = await page.context().cookies(`http://localhost:${process.env.E2E_API_PORT || '8000'}`);
   const session = cookies.find((c) => c.name === 'acrms_session');
   expect(session?.httpOnly).toBe(true);
 });
