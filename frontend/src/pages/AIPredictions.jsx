@@ -16,6 +16,100 @@ const statusIcon = (s) => ({
   overridden: <RefreshCw size={13} />,
 }[s] || null);
 
+
+function ExplanationPanel({ prediction }) {
+  const [open, setOpen] = useState(false);
+  const explanation = prediction?.input_features?.explanation;
+  const features = explanation?.top_features || [];
+  const similar = prediction?.similar_criminals || [];
+
+  return (
+    <div className="card" style={{ padding: 14, marginTop: 12 }}>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        onClick={() => setOpen(v => !v)}
+        style={{ width: '100%', justifyContent: 'space-between', padding: 0 }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
+          <Brain size={15} style={{ color: 'var(--accent-blue)' }} />
+          Why did the model produce this result?
+        </span>
+        <ChevronRight size={15} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 14 }}>
+          {prediction?.input_features?.gang_prediction_warning && (
+            <div role="alert" style={{ marginBottom: 14, padding: 12, borderRadius: 8, border: '1px solid var(--status-amber)', background: 'var(--bg-elevated)', fontSize: '0.78rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, marginBottom: 5 }}><AlertTriangle size={14} /> Gang prediction unavailable</div>
+              <div style={{ color: 'var(--text-secondary)' }}>{prediction.input_features.gang_prediction_warning}</div>
+            </div>
+          )}
+          {prediction?.input_features?.model_validity_warning && (
+            <div role="alert" style={{ marginBottom: 14, padding: 12, borderRadius: 8, border: '1px solid var(--status-amber)', background: 'var(--bg-elevated)', fontSize: '0.78rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, marginBottom: 5 }}><AlertTriangle size={14} /> Model validation warning</div>
+              <div style={{ color: 'var(--text-secondary)' }}>{prediction.input_features.model_validity_warning}</div>
+            </div>
+          )}
+          {prediction?.input_features?.feature_input_quality && (
+            <div role="status" style={{ marginBottom: 14, padding: 12, borderRadius: 8, border: '1px solid var(--status-amber)', background: 'var(--bg-elevated)', fontSize: '0.78rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 700, marginBottom: 5 }}>
+                <AlertTriangle size={14} /> Input completeness: {prediction.input_features.feature_input_quality.coverage_percent}%
+              </div>
+              <div style={{ color: 'var(--text-secondary)' }}>
+                {prediction.input_features.feature_input_quality.warning || 'All model feature fields were supplied or derived; this does not establish evidence quality or model validity.'}
+              </div>
+              {prediction.input_features.feature_input_quality.defaulted_features?.length > 0 && (
+                <div style={{ marginTop: 6, color: 'var(--text-muted)' }}>
+                  Defaulted fields: {prediction.input_features.feature_input_quality.defaulted_features.map(name => name.replace(/_/g, ' ')).join(', ')}
+                </div>
+              )}
+            </div>
+          )}
+          {features.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead><tr>
+                  <th style={{ textAlign: 'left', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Feature</th>
+                  <th style={{ textAlign: 'right', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Value</th>
+                  <th style={{ textAlign: 'right', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Relative Importance</th>
+                </tr></thead>
+                <tbody>{features.map(item => (
+                  <tr key={item.feature}>
+                    <td style={{ padding: '7px 6px', color: 'var(--text-secondary)' }}>{item.feature.replace(/_/g, ' ')}</td>
+                    <td className="mono" style={{ padding: '7px 6px', textAlign: 'right' }}>{item.value}</td>
+                    <td className="mono" style={{ padding: '7px 6px', textAlign: 'right' }}>{(item.relative_importance * 100).toFixed(2)}%</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>No model explanation metadata is available for this prediction.</div>}
+
+          <div style={{ marginTop: 12, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+            These are Random Forest model feature-importance values. They describe relative model importance and do not establish that a feature caused the prediction.
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <div className="form-label" style={{ marginBottom: 7 }}>Similar Records</div>
+            {similar.length > 0 ? similar.map(item => (
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{item.name || `Record #${item.id}`}</span>
+                <span className="mono">{Number(item.score).toFixed(1)}% · {item.crime_type || 'N/A'}</span>
+              </div>
+            )) : <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>No similar records available.</div>}
+          </div>
+
+          <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+            <span>Model: <strong>{prediction.model_version}</strong></span>
+            <span>Generated: <strong>{prediction.created_at ? new Date(prediction.created_at).toLocaleString() : 'N/A'}</strong></span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReviewModal({ prediction, onClose, onSubmitted }) {
   const { isAdmin, isOfficer } = useAuth();
   const canReview = isAdmin || isOfficer;
@@ -85,20 +179,31 @@ function ReviewModal({ prediction, onClose, onSubmitted }) {
             <div className="card" style={{ padding: 14, marginBottom: 12 }}>
               <div className="form-label" style={{ marginBottom: 4 }}>Gang Affiliation Assessment</div>
               <div style={{ fontSize: '0.95rem', fontWeight: 600 }}>
-                {p.predicted_gang_id ? `Gang Association #${p.predicted_gang_id}` : 'No Gang Affiliation Detected'}
+                {p.input_features?.gang_prediction_available === false
+                  ? 'Prediction unavailable'
+                  : p.predicted_gang_id ? `Gang Association #${p.predicted_gang_id}` : 'No Gang Affiliation Detected'}
               </div>
               <div className="mono" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                Affiliation probability: {p.gang_affiliation_probability?.toFixed(1)}%
+                {p.input_features?.gang_prediction_available === false
+                  ? 'No validated gang prediction is available for this model version.'
+                  : `Model score: ${p.gang_affiliation_probability?.toFixed(1)}% (not a verified probability)`}
               </div>
             </div>
 
             <div className="card" style={{ padding: 14 }}>
-              <div className="form-label" style={{ marginBottom: 4 }}>Threat Risk Score Index</div>
+              <div className="form-label" style={{ marginBottom: 4 }}>Prototype Decision-Support Score</div>
               <RiskBadge score={p.risk_score} level={p.risk_level} showBar />
+              <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                This unvalidated prototype score must not independently determine official status or action.
+              </div>
               <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 Model Version: <span className="mono" style={{ color: 'var(--text-primary)' }}>{p.model_version}</span>
               </div>
             </div>
+          </div>
+
+          <div style={{ gridColumn: '1 / -1' }}>
+            <ExplanationPanel prediction={p} />
           </div>
 
           {/* Right Column - Review Decision Input */}

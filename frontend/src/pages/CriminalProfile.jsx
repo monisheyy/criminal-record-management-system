@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FileText, Download, Brain, User, Activity, History,
-  Shield, ChevronLeft, Clock, AlertTriangle, ExternalLink
+  Shield, ChevronLeft, Clock, AlertTriangle, ExternalLink, ChevronRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { criminalsAPI, aiAPI } from '../services/api';
@@ -13,6 +13,61 @@ const safeDate = (d) => {
   if (!d) return 'N/A';
   try { return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return 'N/A'; }
 };
+
+function ExplanationPanel({ prediction }) {
+  const [open, setOpen] = useState(false);
+  const explanation = prediction?.input_features?.explanation;
+  const features = explanation?.top_features || [];
+  const similar = prediction?.similar_criminals || [];
+
+  return (
+    <div style={{ marginBottom: 16, padding: 14, border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(v => !v)} style={{ width: '100%', justifyContent: 'space-between', padding: 0 }}>
+        <span style={{ fontWeight: 700 }}>Why did the model produce this result?</span>
+        <ChevronRight size={15} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+      </button>
+      {open && (
+        <div style={{ marginTop: 14 }}>
+          {features.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead><tr>
+                  <th style={{ textAlign: 'left', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Feature</th>
+                  <th style={{ textAlign: 'right', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Value</th>
+                  <th style={{ textAlign: 'right', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Relative Importance</th>
+                </tr></thead>
+                <tbody>{features.map(item => <tr key={item.feature}>
+                  <td style={{ padding: '7px 6px', color: 'var(--text-secondary)' }}>{item.feature.replace(/_/g, ' ')}</td>
+                  <td className="td-mono" style={{ padding: '7px 6px', textAlign: 'right' }}>{item.value}</td>
+                  <td className="td-mono" style={{ padding: '7px 6px', textAlign: 'right' }}>{(item.relative_importance * 100).toFixed(2)}%</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          ) : <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>No model explanation metadata is available for this prediction.</div>}
+          <div style={{ marginTop: 10, fontSize: '0.7rem', color: 'var(--text-muted)' }}>Important model features indicate relative Random Forest model importance; they do not establish that a feature caused the prediction.</div>
+          <div style={{ marginTop: 14 }}>
+            <div className="form-label" style={{ marginBottom: 7 }}>Similar Records</div>
+            {similar.length > 0 ? similar.map(item => <div key={item.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border-subtle)', fontSize: '0.78rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <span>{item.name || `Record #${item.id}`}</span>
+                <span className="td-mono">{Number(item.score).toFixed(1)}% · {item.crime_type || 'N/A'}</span>
+              </div>
+              {Array.isArray(item.matching_features) && item.matching_features.length > 0 && (
+                <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: '0.68rem' }}>
+                  Matching features: {item.matching_features.map(feature => feature.replace(/_/g, ' ')).join(', ')}
+                </div>
+              )}
+            </div>) : <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>No similar records available.</div>}
+          </div>
+          <div style={{ marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+            <span>Model: <strong>{prediction.model_version}</strong></span>
+            <span>Generated: <strong>{prediction.created_at ? new Date(prediction.created_at).toLocaleString() : 'N/A'}</strong></span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function CriminalProfile() {
   const { id } = useParams();
@@ -59,21 +114,21 @@ export default function CriminalProfile() {
     }
   };
 
-  const handleDownload = async () => {
+  const downloadReport = async (format) => {
     setDownloading(true);
     try {
-      const res = await criminalsAPI.report(id);
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const res = format === 'excel' ? await criminalsAPI.reportExcel(id) : await criminalsAPI.report(id);
+      const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `dossier_${profile.crn || id}.pdf`;
+      a.download = `dossier_${profile.crn || id}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-      toast.success('Dossier PDF downloaded.');
+      toast.success(`Dossier ${format === 'excel' ? 'Excel' : 'PDF'} downloaded.`);
     } catch {
-      toast.error('Failed to download PDF dossier.');
+      toast.error(`Failed to download ${format === 'excel' ? 'Excel' : 'PDF'} report.`);
     } finally {
       setDownloading(false);
     }
@@ -122,8 +177,11 @@ export default function CriminalProfile() {
               <Brain size={14} /> {predicting ? 'Analyzing...' : 'Run Risk Assessment'}
             </button>
           )}
-          <button className="btn btn-secondary" onClick={handleDownload} disabled={downloading}>
-            <Download size={14} /> {downloading ? 'Generating PDF...' : 'Download Dossier'}
+          <button className="btn btn-secondary" onClick={() => downloadReport('pdf')} disabled={downloading}>
+            <Download size={14} /> {downloading ? 'Generating...' : 'Export PDF'}
+          </button>
+          <button className="btn btn-secondary" onClick={() => downloadReport('excel')} disabled={downloading}>
+            <FileText size={14} /> Export Excel
           </button>
         </div>
       </div>
@@ -217,7 +275,15 @@ export default function CriminalProfile() {
                 <RiskBadge score={latestPred.risk_score} level={latestPred.risk_level} showBar />
               </div>
             </div>
+            <div className="stat-card">
+              <span className="stat-label">Overall Model Confidence</span>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent-blue)', marginTop: 4 }}>
+                {latestPred.confidence_overall?.toFixed(1)}%
+              </div>
+            </div>
           </div>
+
+          <ExplanationPanel prediction={latestPred} />
 
           {latestPred.input_features && (
             <div>

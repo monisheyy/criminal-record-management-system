@@ -30,7 +30,7 @@ async def create_gang(
     db.add(gang)
     db.commit()
     db.refresh(gang)
-    create_audit_log(db, "GANG_CREATED", user_id=current_user.id, username=current_user.username,
+    create_audit_log(db, "GANG_CREATED", user_id=current_user.id, username=current_user.username, role=current_user.role,
                      resource_type="gang", resource_id=gang.id, details={"name": data.name})
     return gang
 

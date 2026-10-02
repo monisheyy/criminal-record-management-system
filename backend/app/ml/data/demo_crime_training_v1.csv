@@ -1,0 +1,601 @@
+prior_convictions,age,is_gang_member,weapons_involved,drug_involvement,financial_motivation,tech_involvement,violence_history,location_risk,time_of_crime,associates_count,crime_type,gang_label
+6,44,0,1,0,0,0,2,0.86617615,3,7,Arms Trafficking,None
+5,17,1,1,0,1,0,1,0.52475643,11,8,Burglary,Iron Fist
+9,43,1,0,0,1,0,3,0.59241457,2,4,Extortion,Black Eagles
+8,54,0,1,0,0,0,1,0.68423303,14,11,Robbery,None
+7,62,0,0,0,1,0,1,0.56770033,17,9,Kidnapping,None
+9,51,0,1,0,0,0,4,0.38867729,17,14,Car Theft,None
+9,40,0,1,0,1,0,0,0.77224477,11,7,Robbery,None
+2,32,1,1,1,1,0,3,0.86310343,7,11,Drug Trafficking,Black Eagles
+2,59,1,1,0,0,1,0,0.72172952,22,14,Drug Trafficking,Iron Fist
+8,30,0,0,0,0,0,3,0.56327557,3,13,Murder,None
+6,60,0,0,1,1,0,3,0.92969765,12,13,Extortion,None
+5,43,1,0,1,1,1,3,0.35629784,0,0,Drug Trafficking,Shadow Syndicate
+3,28,1,0,0,0,0,2,0.26941233,23,14,Drug Trafficking,Shadow Syndicate
+3,64,0,0,0,1,1,4,0.28484049,16,10,Extortion,None
+1,43,0,0,1,0,0,3,0.44778316,5,6,Extortion,None
+7,32,1,0,1,1,0,0,0.15071754,5,12,Vandalism,Night Wolves
+3,34,1,1,0,0,1,1,0.83771011,10,11,Arms Trafficking,Red Serpents
+6,46,1,0,1,1,0,3,0.26082917,0,13,Arson,Black Eagles
+6,24,0,1,1,1,0,0,0.64203165,10,0,Murder,None
+5,55,1,0,0,1,0,1,0.48561375,2,12,Burglary,Shadow Syndicate
+3,48,0,0,0,1,1,0,0.54254023,18,5,Cybercrime,None
+5,53,0,1,1,1,0,3,0.66892406,0,4,Murder,None
+2,19,0,1,0,1,1,4,0.88349402,8,4,Money Laundering,None
+0,61,1,1,1,0,0,0,0.31692201,17,8,Drug Trafficking,Red Serpents
+2,55,0,0,1,0,0,1,0.87737307,16,7,Extortion,None
+5,63,0,0,0,0,0,3,0.5113424,3,12,Murder,None
+7,61,1,1,0,0,0,2,0.46559802,21,9,Car Theft,Shadow Syndicate
+3,57,1,0,0,1,1,3,0.96525183,6,3,Vandalism,Night Wolves
+2,55,1,1,0,0,1,2,0.43897142,22,9,Robbery,Black Eagles
+6,24,1,0,1,0,0,0,0.66019738,20,0,Arson,Black Eagles
+5,44,0,0,0,1,0,3,0.04600264,16,13,Arson,None
+3,20,0,0,0,0,0,4,0.39850473,9,5,Extortion,None
+1,46,0,1,0,1,0,1,0.02651131,19,7,Extortion,None
+2,48,0,1,1,0,1,1,0.20668436,12,11,Robbery,None
+1,50,0,1,0,1,0,2,0.28185477,3,9,Extortion,None
+7,51,0,1,0,0,0,2,0.99050514,15,3,Drug Trafficking,None
+6,47,0,1,1,0,1,0,0.23823615,16,0,Cybercrime,None
+8,37,0,0,0,1,1,0,0.31931364,13,14,Money Laundering,None
+2,62,0,0,1,1,0,4,0.79157904,6,12,Money Laundering,None
+9,54,1,0,1,1,1,3,0.68803001,11,0,Drug Trafficking,Black Eagles
+7,57,0,1,0,1,0,4,0.37064215,19,0,Money Laundering,None
+8,60,1,0,0,1,0,2,0.24872415,18,6,Arms Trafficking,Black Eagles
+1,43,0,1,1,1,1,2,0.58336877,16,8,Vandalism,None
+5,21,1,1,0,0,0,4,0.9929648,4,3,Arms Trafficking,Night Wolves
+8,33,0,0,0,1,0,2,0.90115801,10,11,Money Laundering,None
+7,53,0,1,0,0,0,1,0.22939475,4,8,Murder,None
+5,32,0,0,1,0,0,2,0.82253724,17,2,Human Trafficking,None
+8,17,0,1,0,0,0,0,0.48037008,14,0,Drug Trafficking,None
+9,40,1,1,1,0,0,0,0.01367196,22,5,Arms Trafficking,Black Eagles
+4,53,1,1,1,1,0,4,0.45054414,13,0,Money Laundering,Black Eagles
+3,16,1,1,0,0,0,1,0.4762107,2,10,Drug Trafficking,Shadow Syndicate
+5,59,0,1,0,0,0,4,0.62030955,1,10,Murder,None
+5,49,0,1,0,0,1,3,0.54744631,0,7,Vandalism,None
+6,57,1,1,0,1,0,3,0.06623598,4,1,Extortion,Red Serpents
+2,62,0,0,0,0,0,3,0.34566728,2,2,Kidnapping,None
+1,34,1,0,0,0,0,4,0.46077877,13,1,Murder,Red Serpents
+8,41,1,1,0,1,1,4,0.00259502,3,0,Assault,Iron Fist
+3,30,0,1,0,1,0,1,0.74747094,13,10,Murder,None
+6,18,1,1,0,0,0,2,0.39716383,22,4,Murder,Shadow Syndicate
+0,54,0,1,0,0,0,1,0.78917124,12,1,Robbery,None
+5,49,0,1,0,0,0,3,0.64591724,1,10,Drug Trafficking,None
+5,52,1,0,0,0,0,2,0.08788762,23,6,Vandalism,Iron Fist
+2,46,0,1,0,0,1,3,0.00530001,21,0,Cybercrime,None
+5,17,0,1,0,1,0,3,0.42543644,0,3,Murder,None
+0,41,1,0,0,1,0,2,0.05182354,17,7,Drug Trafficking,Red Serpents
+1,28,1,0,0,0,0,2,0.34886827,16,4,Car Theft,Night Wolves
+1,29,1,1,0,0,1,3,0.84182878,7,10,Extortion,Night Wolves
+2,36,0,0,1,1,0,1,0.39244511,7,7,Fraud,None
+2,53,0,0,0,0,0,1,0.54355286,7,7,Extortion,None
+2,21,1,1,0,0,1,4,0.49542363,6,10,Extortion,Shadow Syndicate
+0,52,1,0,0,1,0,1,0.34208175,5,12,Murder,Night Wolves
+7,30,1,0,0,1,1,2,0.69394844,3,9,Cybercrime,Black Eagles
+3,26,1,0,0,0,0,2,0.1533514,12,7,Arms Trafficking,Shadow Syndicate
+0,62,1,1,0,1,1,4,0.70723863,9,0,Arms Trafficking,Red Serpents
+8,44,0,1,1,0,0,1,0.83889809,21,6,Arson,None
+5,55,1,0,1,0,1,1,0.33349917,19,8,Car Theft,Red Serpents
+6,33,0,1,0,0,1,0,0.49836777,5,4,Vandalism,None
+0,44,0,1,0,1,0,3,0.45898899,19,5,Arson,None
+7,64,0,0,0,0,1,4,0.62497599,15,7,Kidnapping,None
+0,29,1,1,0,0,0,2,0.15524025,0,7,Car Theft,Iron Fist
+9,25,1,1,1,1,1,4,0.4079845,22,2,Drug Trafficking,Iron Fist
+7,62,0,1,0,1,1,2,0.96264932,19,4,Murder,None
+6,63,0,1,1,1,0,2,0.58304156,17,1,Money Laundering,None
+4,35,0,1,0,0,1,4,0.40941165,8,1,Car Theft,None
+2,37,1,0,0,1,0,0,0.48477837,16,13,Human Trafficking,Red Serpents
+8,54,0,1,0,0,1,1,0.27230733,10,5,Vandalism,None
+4,57,0,0,0,1,1,4,0.01099583,20,10,Money Laundering,None
+5,42,0,1,1,0,1,1,0.4043815,13,1,Murder,None
+0,51,1,0,1,0,1,2,0.29712172,2,5,Cybercrime,Black Eagles
+7,48,0,1,0,1,1,2,0.59684285,1,8,Human Trafficking,None
+4,24,0,1,0,1,0,2,0.81910232,4,11,Extortion,None
+5,49,0,0,1,1,1,0,0.44600577,14,11,Fraud,None
+7,34,1,1,1,1,1,0,0.90336381,11,14,Arms Trafficking,Shadow Syndicate
+9,62,0,1,1,1,0,4,0.73102367,18,7,Money Laundering,None
+6,44,0,1,1,0,1,0,0.65016735,23,2,Cybercrime,None
+1,18,1,0,1,0,0,0,0.53840149,21,8,Extortion,Shadow Syndicate
+9,59,0,0,1,0,1,4,0.38396389,2,10,Money Laundering,None
+3,44,1,0,0,1,1,0,0.76827341,6,3,Extortion,Shadow Syndicate
+2,60,0,0,0,0,0,0,0.9103391,14,8,Assault,None
+8,39,0,1,1,0,0,2,0.90372397,1,8,Arms Trafficking,None
+3,23,1,1,1,1,0,1,0.38409061,8,0,Money Laundering,Black Eagles
+4,62,0,1,0,1,0,2,0.75823848,16,7,Money Laundering,None
+2,53,1,1,0,1,1,2,0.87746086,2,10,Murder,Shadow Syndicate
+2,40,1,0,0,1,1,1,0.40845321,14,5,Cybercrime,Black Eagles
+9,33,0,0,1,0,1,4,0.48058658,18,9,Cybercrime,None
+7,49,0,1,1,1,1,3,0.85058173,15,8,Burglary,None
+8,57,0,1,0,1,1,0,0.02924728,22,9,Assault,None
+4,45,1,0,0,1,0,1,0.28703813,13,10,Money Laundering,Shadow Syndicate
+7,46,0,0,1,0,0,1,0.43224078,1,14,Burglary,None
+4,44,1,0,1,1,0,3,0.0673506,9,5,Burglary,Red Serpents
+7,33,1,1,1,1,0,4,0.38361226,10,0,Drug Trafficking,Iron Fist
+9,38,0,0,1,0,0,4,0.69368223,19,1,Human Trafficking,None
+3,37,0,1,1,0,1,4,0.63852595,5,2,Drug Trafficking,None
+2,16,0,1,1,0,1,3,0.56275029,11,10,Money Laundering,None
+8,32,0,0,0,1,0,4,0.13124488,20,7,Money Laundering,None
+2,35,1,0,0,0,0,3,0.55841267,15,8,Murder,Black Eagles
+4,17,1,0,0,0,0,1,0.47993883,5,10,Extortion,Shadow Syndicate
+5,56,0,0,0,0,1,3,0.70246497,9,7,Robbery,None
+0,17,0,1,0,1,0,1,0.97746639,13,9,Car Theft,None
+1,57,0,0,1,1,0,0,0.05197128,8,1,Money Laundering,None
+7,43,1,0,1,0,1,3,0.59747586,21,9,Cybercrime,Shadow Syndicate
+9,29,0,0,0,0,1,1,0.32901744,13,3,Human Trafficking,None
+6,47,0,1,1,0,1,0,0.49327685,9,2,Arms Trafficking,None
+5,30,0,0,1,1,1,3,0.62876482,11,13,Money Laundering,None
+7,64,0,1,0,0,0,1,0.79295609,6,9,Money Laundering,None
+9,27,0,0,1,0,1,3,0.90903252,22,9,Drug Trafficking,None
+1,52,1,0,0,1,0,0,0.66262128,6,5,Extortion,Shadow Syndicate
+8,43,0,1,0,1,0,4,0.23702786,10,9,Robbery,None
+9,44,0,1,0,0,0,0,0.25252778,21,3,Drug Trafficking,None
+4,62,1,0,1,1,0,3,0.53990584,19,1,Money Laundering,Shadow Syndicate
+4,35,0,1,0,0,0,0,0.50723481,13,11,Assault,None
+4,39,1,0,0,1,0,2,0.48884658,11,5,Drug Trafficking,Black Eagles
+3,31,1,1,0,0,1,4,0.44375022,4,14,Murder,Red Serpents
+0,41,0,0,0,1,1,0,0.03038706,7,8,Extortion,None
+0,16,0,1,0,1,0,3,0.15928745,5,14,Money Laundering,None
+8,40,1,1,0,1,1,4,0.76519086,3,5,Fraud,Red Serpents
+1,28,1,0,1,0,0,0,0.32838123,0,11,Kidnapping,Black Eagles
+2,44,0,0,0,0,0,2,0.16844439,13,9,Car Theft,None
+8,18,0,1,1,1,1,0,0.38019562,1,4,Drug Trafficking,None
+3,30,0,1,1,1,0,4,0.19577799,22,14,Robbery,None
+8,51,1,0,1,0,0,4,0.61735176,20,3,Arms Trafficking,Black Eagles
+2,23,0,1,1,0,0,0,0.52248104,6,14,Car Theft,None
+6,28,0,0,1,0,1,3,0.48354565,6,5,Cybercrime,None
+7,60,1,1,1,1,1,0,0.79374385,14,9,Drug Trafficking,Shadow Syndicate
+9,23,1,1,0,0,1,3,0.42373825,9,8,Robbery,Night Wolves
+9,48,0,0,0,1,0,4,0.09571456,15,4,Extortion,None
+6,47,1,0,1,0,0,2,0.59704692,17,2,Drug Trafficking,Black Eagles
+6,56,1,1,0,0,1,1,0.90552479,12,13,Drug Trafficking,Black Eagles
+0,51,0,0,0,0,0,0,0.83186311,4,11,Drug Trafficking,None
+4,23,1,1,0,0,0,1,0.99413936,1,5,Arms Trafficking,Red Serpents
+6,45,0,1,0,1,0,0,0.17047794,9,13,Fraud,None
+6,31,0,0,1,0,0,3,0.97416463,21,4,Human Trafficking,None
+7,59,0,1,0,0,1,0,0.60848641,11,5,Assault,None
+3,48,0,0,0,0,0,0,0.30552431,19,13,Fraud,None
+3,33,0,1,0,1,1,1,0.501153,16,9,Kidnapping,None
+2,45,1,1,1,1,0,0,0.32252798,2,1,Murder,Iron Fist
+1,29,1,1,1,0,1,3,0.60637094,0,13,Car Theft,Black Eagles
+3,18,1,1,1,0,0,3,0.13516629,3,12,Fraud,Night Wolves
+3,33,0,1,0,0,0,2,0.38646084,4,2,Murder,None
+8,17,0,1,1,0,0,0,0.14224937,8,11,Drug Trafficking,None
+2,22,1,0,0,1,1,3,0.30625362,19,3,Arms Trafficking,Red Serpents
+4,50,0,0,1,1,1,1,0.13380374,20,5,Car Theft,None
+4,25,1,0,1,0,1,4,0.97587375,17,4,Arson,Night Wolves
+0,50,0,1,0,0,0,3,0.86466039,15,11,Arms Trafficking,None
+2,56,1,1,0,1,0,0,0.65869215,8,0,Human Trafficking,Black Eagles
+0,25,1,0,1,1,0,2,0.45012443,16,14,Arson,Black Eagles
+2,20,1,1,1,0,0,2,0.65903553,18,7,Assault,Shadow Syndicate
+4,35,1,0,0,0,1,2,0.18519557,10,9,Murder,Red Serpents
+5,62,0,1,0,1,0,1,0.6673504,2,0,Murder,None
+3,29,0,1,0,1,0,3,0.29282204,7,1,Arms Trafficking,None
+4,47,1,1,1,0,0,1,0.22461561,7,10,Fraud,Red Serpents
+8,37,0,1,1,0,0,4,0.28590679,22,6,Car Theft,None
+8,62,0,1,0,1,1,3,0.05385821,21,5,Money Laundering,None
+5,43,0,0,0,1,1,2,0.15067611,11,12,Fraud,None
+4,48,0,0,0,1,1,0,0.76112154,14,7,Fraud,None
+7,16,1,1,0,0,1,1,0.20403563,9,4,Arms Trafficking,Iron Fist
+1,56,0,1,0,1,1,3,0.74573378,13,8,Money Laundering,None
+8,35,0,0,0,1,1,3,0.38537588,3,3,Car Theft,None
+5,50,0,1,0,0,0,3,0.18131928,12,3,Burglary,None
+6,19,0,1,0,0,1,1,0.59936897,18,14,Robbery,None
+2,64,1,0,1,1,1,4,0.78861496,18,12,Drug Trafficking,Shadow Syndicate
+6,48,0,0,0,1,1,3,0.29944351,0,0,Extortion,None
+3,63,0,1,1,1,1,1,0.58776936,19,12,Money Laundering,None
+2,28,1,1,0,1,1,2,0.94067925,9,2,Fraud,Iron Fist
+4,44,0,0,0,1,1,1,0.08060151,6,6,Fraud,None
+0,39,1,1,0,1,0,3,0.65695516,3,4,Robbery,Night Wolves
+9,45,0,0,0,1,1,1,0.84478944,5,11,Drug Trafficking,None
+3,58,0,1,0,1,0,1,0.73244873,10,3,Assault,None
+6,36,0,0,0,1,1,1,0.14496507,22,9,Burglary,None
+0,34,0,1,1,0,0,4,0.22531693,9,8,Car Theft,None
+6,48,0,0,1,1,0,0,0.54353822,5,13,Fraud,None
+0,25,0,1,1,1,0,2,0.65097347,21,11,Robbery,None
+7,53,1,0,0,1,0,4,0.16470635,3,13,Human Trafficking,Black Eagles
+5,43,0,1,0,1,0,1,0.06520459,2,7,Drug Trafficking,None
+9,50,0,1,1,0,1,2,0.19560927,11,9,Robbery,None
+8,51,0,0,1,0,1,1,0.15795482,19,5,Human Trafficking,None
+6,31,1,1,0,1,0,0,0.0333836,7,4,Extortion,Iron Fist
+4,19,1,1,1,0,1,0,0.41776098,22,4,Arms Trafficking,Black Eagles
+1,19,1,1,1,0,0,2,0.52739962,19,1,Murder,Black Eagles
+2,43,1,1,0,1,0,2,0.90129601,11,11,Cybercrime,Red Serpents
+5,18,1,1,0,0,0,0,0.23987411,19,1,Burglary,Red Serpents
+9,26,1,1,0,1,0,2,0.63414214,19,12,Extortion,Red Serpents
+2,55,0,1,0,1,1,2,0.69415057,14,5,Cybercrime,None
+4,50,1,0,1,1,0,0,0.78844734,12,14,Drug Trafficking,Shadow Syndicate
+5,42,0,0,0,0,1,2,0.41276113,13,10,Cybercrime,None
+8,55,1,1,0,1,0,2,0.82603905,18,8,Car Theft,Black Eagles
+6,29,1,0,1,0,1,4,0.54069848,7,0,Drug Trafficking,Shadow Syndicate
+7,40,1,0,0,1,0,2,0.902895,7,1,Extortion,Shadow Syndicate
+7,31,0,1,0,1,1,1,0.57334935,20,4,Drug Trafficking,None
+4,18,0,1,0,0,1,1,0.8789789,0,7,Cybercrime,None
+7,27,1,0,0,0,0,4,0.63130755,19,8,Extortion,Night Wolves
+6,22,0,0,1,1,0,1,0.47289713,8,0,Drug Trafficking,None
+5,21,1,0,0,1,1,2,0.27681431,0,8,Cybercrime,Shadow Syndicate
+2,55,0,0,0,1,0,0,0.00766403,7,10,Arson,None
+0,41,0,0,0,0,0,0,0.39701504,4,0,Extortion,None
+7,36,0,1,1,0,1,2,0.45059702,13,12,Drug Trafficking,None
+2,27,1,1,0,1,0,1,0.95506051,4,7,Vandalism,Black Eagles
+6,64,1,1,0,0,0,1,0.09228479,14,11,Arms Trafficking,Shadow Syndicate
+0,27,0,0,1,1,0,1,0.88803906,12,9,Kidnapping,None
+2,24,1,1,1,0,1,2,0.53396747,7,1,Robbery,Night Wolves
+2,58,0,1,0,0,0,0,0.72917349,5,11,Burglary,None
+1,51,1,0,0,1,0,1,0.38423962,2,11,Extortion,Shadow Syndicate
+6,55,1,0,0,0,0,1,0.1668602,4,6,Murder,Shadow Syndicate
+0,62,0,0,1,1,0,2,0.40962889,16,0,Extortion,None
+4,23,0,0,1,0,0,4,0.97202526,23,7,Fraud,None
+3,41,0,0,0,0,0,2,0.14706185,20,13,Assault,None
+9,52,1,0,1,1,1,0,0.0882017,14,13,Cybercrime,Black Eagles
+5,19,1,0,0,0,0,2,0.35618565,1,12,Drug Trafficking,Shadow Syndicate
+4,61,1,0,1,1,0,4,0.44404375,14,1,Fraud,Iron Fist
+0,50,1,1,0,1,0,4,0.14798415,4,0,Extortion,Iron Fist
+4,49,1,1,1,0,1,3,0.05774105,23,3,Cybercrime,Red Serpents
+5,32,1,1,0,1,0,1,0.49141818,10,0,Arms Trafficking,Iron Fist
+8,32,1,1,0,1,1,3,0.80658934,2,14,Murder,Night Wolves
+0,32,1,1,0,1,0,4,0.97153304,22,1,Arms Trafficking,Black Eagles
+5,58,1,1,1,1,1,0,0.27875987,23,13,Money Laundering,Iron Fist
+2,23,1,0,0,0,0,4,0.74047613,4,12,Human Trafficking,Black Eagles
+8,16,1,1,0,0,0,3,0.40710649,5,10,Burglary,Iron Fist
+1,60,1,1,0,0,0,1,0.24223122,5,11,Assault,Red Serpents
+7,62,0,1,0,0,0,2,0.02202692,6,4,Car Theft,None
+0,56,0,0,0,0,1,0,0.71979145,9,9,Car Theft,None
+5,35,1,0,1,1,1,3,0.14287596,22,7,Drug Trafficking,Red Serpents
+1,49,1,0,0,0,0,4,0.04685191,21,5,Arson,Red Serpents
+7,56,0,1,0,1,1,2,0.27039329,1,11,Arms Trafficking,None
+1,30,1,0,0,1,0,0,0.68701927,0,11,Extortion,Red Serpents
+6,36,1,1,1,1,1,0,0.29805221,20,3,Extortion,Night Wolves
+4,57,0,0,0,1,0,1,0.63442415,2,11,Robbery,None
+6,56,0,1,0,1,0,2,0.73049636,21,0,Car Theft,None
+6,60,0,0,1,0,1,3,0.05219863,7,5,Drug Trafficking,None
+3,36,0,0,0,0,0,3,0.09986682,9,13,Drug Trafficking,None
+5,39,1,1,1,0,1,0,0.90606589,19,7,Arms Trafficking,Shadow Syndicate
+3,41,1,0,1,1,0,1,0.85712956,21,4,Murder,Shadow Syndicate
+1,52,0,0,0,1,0,3,0.64185996,11,10,Extortion,None
+6,51,1,0,1,1,1,4,0.39800529,3,7,Murder,Shadow Syndicate
+1,49,0,1,0,0,1,0,0.23915878,23,3,Fraud,None
+5,56,0,1,1,1,1,2,0.5782984,10,12,Human Trafficking,None
+7,19,0,1,0,0,1,3,0.53881301,8,13,Robbery,None
+0,20,0,0,0,0,0,1,0.24189329,20,13,Assault,None
+5,37,1,1,0,0,0,4,0.48133338,12,10,Arms Trafficking,Shadow Syndicate
+1,26,0,1,0,1,0,2,0.98114373,11,10,Fraud,None
+1,34,0,0,0,0,1,4,0.90789879,1,0,Money Laundering,None
+4,31,1,1,0,0,1,0,0.45823465,16,10,Arson,Red Serpents
+5,44,0,0,0,0,1,1,0.80475312,20,7,Car Theft,None
+7,17,0,1,0,0,0,3,0.66243401,9,3,Murder,None
+7,42,1,0,0,0,0,3,0.75426497,2,2,Money Laundering,Iron Fist
+9,29,1,1,0,1,0,0,0.24039891,12,3,Assault,Red Serpents
+8,56,0,1,0,1,0,3,0.58162229,10,7,Arms Trafficking,None
+2,27,1,0,0,1,1,4,0.41944799,3,6,Kidnapping,Red Serpents
+3,60,0,0,0,1,0,0,0.36435424,14,2,Arms Trafficking,None
+2,62,1,1,0,1,1,1,0.82478786,1,8,Kidnapping,Black Eagles
+7,38,1,0,0,1,0,3,0.52251018,4,8,Money Laundering,Black Eagles
+3,18,1,0,0,0,1,3,0.74189633,4,12,Cybercrime,Red Serpents
+4,40,0,0,0,0,1,3,0.9848584,23,5,Cybercrime,None
+4,23,1,0,0,1,0,0,0.26884674,9,5,Cybercrime,Night Wolves
+3,62,1,1,0,1,0,3,0.97242,23,1,Extortion,Iron Fist
+5,16,0,0,1,0,0,0,0.1952406,12,5,Drug Trafficking,None
+3,18,0,1,1,0,0,0,0.38051771,14,3,Extortion,None
+3,33,0,1,0,1,0,1,0.43766133,3,7,Extortion,None
+2,21,0,1,0,1,1,4,0.96151334,2,2,Cybercrime,None
+9,40,0,0,0,1,0,4,0.07089158,13,7,Money Laundering,None
+1,31,1,1,0,0,0,3,0.28763273,10,4,Burglary,Shadow Syndicate
+5,48,0,1,1,0,0,1,0.43276688,18,5,Drug Trafficking,None
+1,45,0,1,1,1,0,2,0.78526881,23,3,Drug Trafficking,None
+1,25,1,0,0,1,0,1,0.1133035,8,4,Drug Trafficking,Night Wolves
+8,64,0,0,0,0,0,1,0.28746166,9,5,Money Laundering,None
+6,54,0,1,0,0,0,2,0.62364878,14,1,Murder,None
+1,37,1,0,1,1,0,0,0.52575622,1,12,Drug Trafficking,Iron Fist
+9,40,0,1,1,1,0,3,0.70113959,12,11,Arms Trafficking,None
+3,22,0,0,1,0,1,1,0.73940823,5,5,Murder,None
+1,42,0,0,1,1,0,3,0.43440332,8,10,Robbery,None
+7,43,1,1,0,1,0,0,0.81836957,14,3,Robbery,Shadow Syndicate
+8,61,0,0,0,0,1,1,0.59709577,15,1,Cybercrime,None
+6,25,1,0,0,0,1,2,0.61678361,0,6,Extortion,Iron Fist
+9,32,1,1,0,0,0,4,0.66646305,23,10,Fraud,Black Eagles
+9,58,1,1,0,1,0,3,0.41938961,21,10,Arms Trafficking,Black Eagles
+3,37,0,0,0,1,0,2,0.40967105,17,8,Cybercrime,None
+5,36,0,0,0,1,1,4,0.82648809,18,2,Vandalism,None
+0,19,1,0,0,0,1,1,0.8285556,12,6,Drug Trafficking,Black Eagles
+3,61,0,1,1,1,0,0,0.07764078,12,2,Drug Trafficking,None
+8,20,1,1,1,1,0,0,0.16036541,4,6,Drug Trafficking,Night Wolves
+6,60,0,0,1,1,0,0,0.34522995,10,9,Money Laundering,None
+9,25,1,1,0,0,0,2,0.33567383,23,7,Money Laundering,Shadow Syndicate
+0,48,0,1,1,0,0,2,0.54668526,0,1,Robbery,None
+0,44,0,1,0,0,1,2,0.20431638,16,6,Cybercrime,None
+0,32,1,1,0,1,0,1,0.25327238,21,11,Extortion,Shadow Syndicate
+8,37,1,0,0,1,0,2,0.82059876,8,12,Arms Trafficking,Iron Fist
+4,61,0,1,1,0,0,3,0.18172329,7,3,Car Theft,None
+3,64,0,0,1,0,1,2,0.04283756,2,2,Assault,None
+7,19,0,1,1,1,0,2,0.83136771,16,8,Robbery,None
+1,30,0,1,0,1,0,1,0.75850188,2,4,Murder,None
+6,43,0,1,1,1,1,2,0.43316311,3,9,Kidnapping,None
+5,57,0,0,1,0,0,0,0.24150063,1,13,Vandalism,None
+9,59,1,1,0,0,0,1,0.95849784,16,13,Arms Trafficking,Iron Fist
+5,18,1,0,0,0,0,4,0.65470908,6,5,Assault,Black Eagles
+3,47,1,0,0,1,0,3,0.21723089,4,14,Cybercrime,Black Eagles
+4,47,0,1,0,1,0,2,0.51420104,6,7,Extortion,None
+1,17,1,1,1,1,1,3,0.32663925,9,2,Money Laundering,Iron Fist
+0,50,0,0,1,1,0,4,0.23201818,5,14,Car Theft,None
+1,64,1,0,1,1,0,4,0.86443325,9,2,Arms Trafficking,Black Eagles
+2,58,1,0,0,1,1,2,0.92913952,22,11,Arms Trafficking,Iron Fist
+4,36,1,1,1,1,0,2,0.94920069,17,10,Extortion,Red Serpents
+7,38,1,1,0,1,1,1,0.55468771,0,6,Arms Trafficking,Night Wolves
+5,37,0,0,1,0,0,0,0.60969743,10,14,Vandalism,None
+5,35,1,1,0,0,0,4,0.83379195,1,3,Robbery,Iron Fist
+7,59,0,0,0,0,0,3,0.88097301,15,13,Extortion,None
+6,31,1,1,0,1,0,0,0.9972379,19,4,Arson,Shadow Syndicate
+7,30,1,0,0,0,1,0,0.66930861,9,13,Cybercrime,Iron Fist
+1,22,0,0,0,0,0,3,0.43845672,19,2,Money Laundering,None
+8,55,0,0,0,0,0,4,0.23250599,9,6,Cybercrime,None
+3,28,0,0,1,0,0,1,0.82931423,10,11,Arms Trafficking,None
+4,53,1,0,0,0,0,0,0.44174649,9,8,Extortion,Black Eagles
+7,49,0,1,0,1,1,1,0.3138755,22,6,Kidnapping,None
+8,55,0,0,0,1,0,3,0.68703915,6,8,Money Laundering,None
+1,31,0,0,1,0,0,0,0.81785631,5,2,Human Trafficking,None
+9,29,1,0,0,0,0,3,0.16530229,2,11,Kidnapping,Red Serpents
+5,47,1,1,0,0,0,2,0.93889496,11,0,Arms Trafficking,Black Eagles
+4,40,0,0,0,1,0,3,0.00065339,9,1,Assault,None
+3,28,0,0,0,0,0,1,0.94850294,22,13,Extortion,None
+9,62,1,0,0,1,0,1,0.76042431,16,13,Money Laundering,Red Serpents
+1,28,1,1,0,1,0,0,0.46833019,11,14,Murder,Night Wolves
+0,24,1,0,0,0,0,3,0.72459829,13,8,Arms Trafficking,Iron Fist
+0,58,1,0,1,0,1,1,0.67739313,20,7,Arson,Red Serpents
+5,52,1,0,0,0,0,0,0.33220557,1,14,Robbery,Night Wolves
+0,21,1,0,1,1,1,3,0.35041325,16,10,Burglary,Black Eagles
+3,47,0,0,0,1,0,2,0.84953422,9,1,Money Laundering,None
+0,27,0,0,1,0,0,3,0.27294999,22,13,Cybercrime,None
+1,18,0,0,1,1,1,1,0.1771925,23,4,Drug Trafficking,None
+0,30,0,1,0,1,1,1,0.89556285,22,3,Cybercrime,None
+6,63,0,0,0,0,0,0,0.82249465,20,13,Kidnapping,None
+3,53,1,1,0,1,0,0,0.39012023,5,0,Robbery,Night Wolves
+6,19,0,0,1,1,0,1,0.56057981,19,0,Assault,None
+4,60,0,0,0,1,0,2,0.59484738,0,7,Robbery,None
+6,41,1,1,0,0,0,0,0.03177848,20,7,Burglary,Night Wolves
+8,27,0,0,1,1,0,1,0.35920875,20,14,Vandalism,None
+5,50,0,0,1,0,0,0,0.83459095,15,13,Arson,None
+2,61,0,0,0,1,1,4,0.20424676,5,4,Money Laundering,None
+0,38,0,0,0,0,0,1,0.97115091,16,8,Human Trafficking,None
+6,59,0,1,1,1,0,2,0.2314801,2,9,Vandalism,None
+7,39,1,0,0,0,0,4,0.53166102,13,4,Assault,Night Wolves
+7,31,1,0,0,0,1,2,0.23138064,23,14,Extortion,Shadow Syndicate
+6,60,1,0,0,0,0,2,0.0913741,5,1,Robbery,Black Eagles
+6,49,1,0,1,1,1,3,0.37904049,22,5,Drug Trafficking,Red Serpents
+7,47,0,1,0,1,0,1,0.00637904,16,3,Burglary,None
+0,56,0,1,1,0,0,2,0.45440315,9,2,Money Laundering,None
+6,29,1,0,1,0,0,4,0.30721642,22,13,Extortion,Red Serpents
+7,63,0,1,1,1,0,0,0.0523913,2,3,Drug Trafficking,None
+9,50,0,1,1,0,0,1,0.9264638,9,1,Robbery,None
+0,33,1,1,1,1,0,1,0.58835222,12,3,Money Laundering,Red Serpents
+9,42,1,0,1,0,0,3,0.42612124,10,0,Drug Trafficking,Shadow Syndicate
+7,51,1,1,0,0,0,3,0.28732672,22,13,Extortion,Black Eagles
+3,52,1,0,1,1,0,4,0.80543233,22,3,Arms Trafficking,Shadow Syndicate
+5,51,0,0,0,1,0,2,0.69716369,12,10,Extortion,None
+3,37,0,0,0,0,0,3,0.67238384,19,8,Arms Trafficking,None
+1,33,0,1,0,0,0,3,0.08122963,9,8,Assault,None
+6,19,1,1,1,1,1,2,0.98517456,1,10,Cybercrime,Red Serpents
+1,39,0,1,0,1,0,0,0.12917445,20,3,Arms Trafficking,None
+1,27,0,1,1,0,0,1,0.79146354,9,7,Cybercrime,None
+2,41,0,0,1,0,0,2,0.59424183,1,0,Extortion,None
+5,45,0,0,0,0,1,0,0.62533017,8,5,Drug Trafficking,None
+4,31,0,0,1,0,1,1,0.59414186,11,7,Murder,None
+9,24,1,1,1,0,1,2,0.5481452,23,5,Drug Trafficking,Shadow Syndicate
+1,44,1,1,0,0,0,4,0.60091201,13,1,Vandalism,Night Wolves
+5,21,1,0,0,1,1,0,0.30788638,12,3,Extortion,Iron Fist
+6,47,1,0,1,0,0,3,0.32353041,12,6,Fraud,Night Wolves
+0,56,0,0,0,1,0,2,0.29878287,10,0,Robbery,None
+2,32,0,0,0,1,1,3,0.56574495,8,12,Murder,None
+8,46,0,1,0,0,0,3,0.13801549,10,6,Money Laundering,None
+7,26,0,1,1,1,1,1,0.47646127,0,0,Fraud,None
+3,21,0,1,0,1,0,3,0.69342213,12,3,Human Trafficking,None
+3,34,1,1,0,0,0,3,0.49205449,12,5,Murder,Night Wolves
+7,57,0,0,0,0,1,2,0.83241718,18,11,Cybercrime,None
+6,29,0,0,1,1,0,3,0.30777091,9,11,Money Laundering,None
+7,23,0,1,0,1,0,0,0.7004318,5,13,Cybercrime,None
+2,52,0,0,0,1,1,0,0.96654752,3,10,Money Laundering,None
+6,61,0,0,0,1,0,2,0.96932181,21,12,Fraud,None
+3,29,0,1,1,0,0,4,0.87265507,13,7,Money Laundering,None
+5,57,1,1,0,0,0,0,0.94050395,21,0,Arson,Shadow Syndicate
+9,25,0,1,0,1,0,3,0.39174245,1,3,Extortion,None
+5,41,0,0,0,0,0,2,0.29546792,19,10,Human Trafficking,None
+8,33,0,1,0,1,0,4,0.08061541,15,13,Human Trafficking,None
+6,56,1,0,0,1,1,1,0.30697228,6,12,Drug Trafficking,Red Serpents
+9,38,0,0,1,1,0,1,0.58064523,4,13,Extortion,None
+0,25,1,1,0,1,0,4,0.28033475,20,14,Arms Trafficking,Black Eagles
+5,33,0,1,0,0,0,2,0.19688787,10,3,Murder,None
+3,64,0,0,0,1,0,0,0.01456715,15,14,Extortion,None
+2,64,0,0,0,1,1,2,0.22677263,6,9,Assault,None
+2,34,1,0,0,0,1,4,0.48329428,7,7,Car Theft,Night Wolves
+3,36,0,1,0,1,0,4,0.11354064,6,14,Car Theft,None
+1,56,1,1,0,0,0,0,0.07718753,11,8,Assault,Red Serpents
+8,51,0,1,1,1,0,4,0.09114064,17,10,Robbery,None
+8,43,1,0,0,0,0,0,0.02221848,1,2,Money Laundering,Black Eagles
+4,40,0,1,0,1,0,3,0.07273495,17,14,Cybercrime,None
+2,50,0,1,1,1,0,0,0.40967287,22,5,Murder,None
+5,34,0,1,0,1,1,2,0.0679733,16,4,Extortion,None
+1,50,0,1,1,1,0,3,0.67545605,12,13,Robbery,None
+6,37,1,1,1,0,0,2,0.70072552,12,10,Drug Trafficking,Shadow Syndicate
+4,54,0,1,0,1,0,1,0.4730275,15,3,Extortion,None
+8,60,0,0,0,0,0,3,0.26133302,20,11,Arms Trafficking,None
+8,17,0,0,0,0,1,4,0.3186896,1,7,Murder,None
+4,50,0,0,1,0,0,2,0.89657466,3,8,Robbery,None
+1,40,0,1,1,1,0,0,0.57212296,18,0,Drug Trafficking,None
+7,33,0,1,0,0,0,2,0.08778824,9,9,Fraud,None
+3,33,0,0,1,0,0,0,0.30880228,3,0,Robbery,None
+2,20,0,1,1,1,1,1,0.73591795,8,7,Arms Trafficking,None
+8,45,0,0,0,1,0,3,0.35657133,23,8,Car Theft,None
+1,38,1,1,0,0,0,4,0.76585864,17,3,Cybercrime,Shadow Syndicate
+1,40,1,1,0,1,0,1,0.20658102,19,4,Drug Trafficking,Iron Fist
+2,62,1,1,1,1,0,2,0.84612421,16,2,Money Laundering,Iron Fist
+0,40,1,0,1,0,0,2,0.87548865,12,12,Car Theft,Red Serpents
+1,51,0,1,1,1,0,0,0.66935698,10,9,Drug Trafficking,None
+1,43,1,1,0,1,0,2,0.81194623,19,5,Vandalism,Shadow Syndicate
+0,44,1,1,0,1,0,2,0.95947218,15,5,Robbery,Shadow Syndicate
+9,48,0,1,0,1,0,4,0.9812416,2,3,Money Laundering,None
+2,29,1,1,0,1,1,1,0.40777803,13,1,Robbery,Iron Fist
+1,51,0,1,1,1,0,4,0.13925407,19,0,Murder,None
+1,30,0,0,0,0,1,4,0.41586134,13,7,Cybercrime,None
+1,32,0,1,0,0,0,2,0.8950566,17,9,Arms Trafficking,None
+0,31,0,1,0,0,0,0,0.43526228,19,2,Robbery,None
+7,24,0,0,0,1,1,1,0.1678146,5,10,Assault,None
+1,22,1,0,0,1,0,2,0.74402858,0,11,Cybercrime,Night Wolves
+5,31,0,1,0,1,0,4,0.73909142,10,6,Vandalism,None
+0,30,1,1,0,1,0,1,0.98689595,7,5,Drug Trafficking,Shadow Syndicate
+3,61,0,1,0,1,1,3,0.95404227,23,2,Robbery,None
+3,39,0,1,1,0,0,2,0.42815517,22,11,Drug Trafficking,None
+5,26,1,0,0,0,1,1,0.29765028,16,5,Cybercrime,Shadow Syndicate
+7,37,1,0,0,0,1,0,0.82125015,5,4,Drug Trafficking,Shadow Syndicate
+4,31,0,1,0,1,1,1,0.50246565,16,8,Car Theft,None
+6,59,1,1,1,1,1,2,0.70093537,17,12,Cybercrime,Night Wolves
+5,37,1,1,0,1,0,1,0.22050879,0,6,Money Laundering,Black Eagles
+6,30,1,0,0,0,0,0,0.70595624,1,6,Car Theft,Black Eagles
+9,50,1,0,0,1,1,2,0.82594092,17,10,Murder,Shadow Syndicate
+3,47,1,1,1,1,0,3,0.13226872,9,2,Drug Trafficking,Red Serpents
+2,27,1,1,0,1,0,2,0.80093872,1,14,Assault,Black Eagles
+8,38,0,0,0,1,1,2,0.08707121,8,12,Arms Trafficking,None
+7,48,0,1,0,0,0,0,0.34283896,16,4,Kidnapping,None
+7,26,0,0,0,0,1,1,0.16622936,4,12,Cybercrime,None
+8,29,1,0,1,1,0,2,0.05451193,12,14,Fraud,Night Wolves
+4,34,0,0,1,0,0,4,0.19033698,0,9,Fraud,None
+0,27,1,0,0,1,0,3,0.79128429,21,6,Fraud,Night Wolves
+7,16,0,0,1,0,1,3,0.61920432,19,6,Extortion,None
+9,41,0,0,0,0,0,3,0.71512502,10,1,Fraud,None
+0,27,1,1,1,1,0,4,0.20598004,3,7,Robbery,Shadow Syndicate
+6,30,0,0,0,1,1,2,0.4923623,7,1,Arson,None
+2,49,1,1,0,0,0,3,0.81574538,20,2,Murder,Iron Fist
+5,35,1,0,1,1,0,2,0.16549977,22,4,Arms Trafficking,Iron Fist
+5,32,0,1,1,1,1,4,0.43539632,13,6,Extortion,None
+5,59,0,1,1,0,1,2,0.482274,6,3,Murder,None
+1,57,1,1,0,0,0,1,0.59171697,7,12,Arms Trafficking,Shadow Syndicate
+8,17,0,0,0,0,1,3,0.08496629,11,12,Arms Trafficking,None
+5,36,1,0,0,1,0,0,0.32788399,5,5,Robbery,Night Wolves
+5,59,1,0,0,1,0,2,0.08540303,7,4,Extortion,Black Eagles
+8,54,0,0,0,0,1,1,0.19495827,13,8,Human Trafficking,None
+9,41,0,1,0,0,0,0,0.84399347,17,14,Burglary,None
+1,35,0,1,0,0,0,4,0.88480795,20,9,Burglary,None
+0,26,1,1,0,0,0,1,0.63077042,4,13,Kidnapping,Iron Fist
+5,31,0,1,0,0,1,4,0.16459927,21,12,Drug Trafficking,None
+2,41,0,0,1,1,1,1,0.37698617,21,11,Murder,None
+4,22,1,1,0,1,1,4,0.5373405,10,9,Extortion,Shadow Syndicate
+4,61,0,0,1,1,0,3,0.75645109,0,3,Drug Trafficking,None
+9,52,1,0,0,0,1,4,0.13035313,15,13,Human Trafficking,Night Wolves
+7,31,1,0,0,0,0,0,0.08670657,11,4,Arson,Night Wolves
+7,50,0,1,1,1,0,2,0.93818117,3,4,Drug Trafficking,None
+7,56,1,1,0,1,1,4,0.3991261,21,2,Drug Trafficking,Night Wolves
+1,31,1,1,0,1,0,4,0.85050423,10,2,Arms Trafficking,Shadow Syndicate
+6,49,1,0,1,0,1,1,0.92430957,19,4,Drug Trafficking,Shadow Syndicate
+6,47,0,0,0,1,1,1,0.59780801,5,6,Fraud,None
+0,24,0,0,1,0,1,2,0.5144896,22,7,Cybercrime,None
+9,31,0,1,0,1,0,3,0.75692766,16,5,Arson,None
+1,64,0,0,1,1,0,4,0.06220509,22,11,Burglary,None
+4,30,0,1,1,1,0,3,0.2978594,19,2,Fraud,None
+6,59,0,0,1,0,0,0,0.17916392,4,9,Cybercrime,None
+5,42,1,0,0,1,0,4,0.76586843,16,8,Assault,Red Serpents
+8,46,0,1,0,0,0,4,0.76188989,0,13,Cybercrime,None
+0,51,0,0,1,1,0,4,0.94537165,15,7,Money Laundering,None
+3,35,0,1,0,0,0,0,0.27900829,0,0,Arms Trafficking,None
+9,36,0,0,1,0,0,3,0.31645713,12,1,Drug Trafficking,None
+6,63,1,0,0,1,0,1,0.93763978,23,6,Extortion,Red Serpents
+9,35,1,0,0,1,1,4,0.99542151,20,5,Arms Trafficking,Shadow Syndicate
+6,51,0,0,0,0,1,4,0.22726105,18,7,Extortion,None
+1,57,1,1,0,1,0,0,0.89572636,8,14,Robbery,Night Wolves
+2,37,1,0,1,0,1,1,0.26084925,6,11,Cybercrime,Iron Fist
+1,54,1,0,0,1,0,3,0.09244952,5,10,Kidnapping,Iron Fist
+8,61,0,1,0,1,0,3,0.32298968,11,1,Arms Trafficking,None
+5,46,0,1,0,0,0,0,0.74729756,11,9,Murder,None
+1,57,0,1,0,0,0,1,0.78633166,6,13,Robbery,None
+2,54,1,0,0,1,0,3,0.68719,5,1,Kidnapping,Iron Fist
+2,37,1,0,0,0,0,4,0.54480109,3,9,Burglary,Shadow Syndicate
+3,21,1,1,0,1,0,3,0.87158588,2,2,Arms Trafficking,Black Eagles
+7,63,0,0,0,1,1,4,0.35967556,16,3,Cybercrime,None
+2,32,1,0,0,0,0,1,0.44418395,10,6,Vandalism,Night Wolves
+9,27,1,1,1,0,0,3,0.53147925,9,0,Drug Trafficking,Black Eagles
+2,18,0,1,1,0,0,3,0.51874785,7,14,Murder,None
+6,60,0,0,0,0,0,0,0.55397949,6,0,Fraud,None
+5,38,0,1,1,1,0,3,0.03875694,7,4,Extortion,None
+0,37,1,0,1,0,1,2,0.2926551,9,14,Drug Trafficking,Night Wolves
+1,38,0,0,0,1,0,0,0.26714407,4,6,Kidnapping,None
+6,60,1,1,0,1,0,1,0.89941252,5,4,Money Laundering,Red Serpents
+4,30,0,1,0,1,1,1,0.34096197,3,13,Drug Trafficking,None
+3,26,0,1,1,1,1,1,0.06527676,10,14,Arms Trafficking,None
+0,50,0,0,1,1,0,2,0.09701822,11,12,Fraud,None
+4,24,0,0,1,1,0,4,0.06605531,5,0,Money Laundering,None
+4,61,1,1,1,0,0,4,0.12525123,15,0,Robbery,Iron Fist
+3,62,1,0,0,0,0,1,0.24465505,5,13,Arson,Shadow Syndicate
+4,22,0,0,1,1,1,3,0.51402337,13,14,Extortion,None
+8,30,1,1,1,1,0,4,0.05700239,22,8,Human Trafficking,Night Wolves
+5,46,1,0,0,1,0,1,0.44073904,16,10,Vandalism,Black Eagles
+4,57,0,0,0,0,0,4,0.61974785,22,9,Kidnapping,None
+8,18,1,0,1,0,0,1,0.05621391,4,3,Car Theft,Night Wolves
+0,16,0,1,0,1,0,2,0.2177289,11,12,Money Laundering,None
+0,39,0,1,0,1,0,0,0.2533794,14,14,Extortion,None
+0,30,0,1,1,0,0,1,0.29481724,9,1,Fraud,None
+6,18,0,1,0,1,0,3,0.54566866,20,3,Murder,None
+0,50,0,0,0,0,0,0,0.10722239,18,5,Fraud,None
+3,52,0,0,1,1,0,0,0.3658993,1,4,Drug Trafficking,None
+6,62,0,0,0,1,0,0,0.42478334,16,4,Drug Trafficking,None
+0,50,0,0,1,0,0,2,0.91019612,15,3,Arms Trafficking,None
+6,29,0,0,1,1,1,0,0.95283439,9,8,Arms Trafficking,None
+3,51,1,0,0,0,0,1,0.02812151,3,1,Kidnapping,Shadow Syndicate
+6,31,1,1,1,0,0,1,0.90956443,19,9,Robbery,Shadow Syndicate
+5,28,0,1,1,1,0,3,0.63017508,4,14,Drug Trafficking,None
+9,47,1,1,0,1,0,4,0.08839697,1,13,Kidnapping,Night Wolves
+8,28,1,0,0,0,0,3,0.12037815,11,14,Arson,Red Serpents
+4,57,1,1,0,0,0,2,0.99622449,23,4,Drug Trafficking,Night Wolves
+9,64,1,0,1,1,0,4,0.62677052,19,13,Extortion,Black Eagles
+1,58,1,0,0,0,1,3,0.71737277,18,4,Cybercrime,Iron Fist
+6,42,0,1,0,1,0,3,0.71806816,18,4,Extortion,None
+6,22,0,0,0,1,1,1,0.59763244,14,12,Robbery,None
+6,48,0,0,1,0,1,1,0.44150392,16,5,Drug Trafficking,None
+5,61,1,0,0,1,0,0,0.46393626,5,13,Fraud,Red Serpents
+6,27,1,1,0,0,0,4,0.45870512,9,4,Drug Trafficking,Shadow Syndicate
+3,17,1,1,1,0,0,1,0.9845759,5,6,Drug Trafficking,Shadow Syndicate
+2,18,0,0,1,1,0,3,0.77682137,17,11,Assault,None
+1,52,0,1,0,1,0,4,0.23899768,21,14,Fraud,None
+9,56,0,1,1,0,0,1,0.68025069,18,7,Assault,None
+2,29,1,0,0,1,1,4,0.81093519,20,10,Money Laundering,Night Wolves
+3,43,1,1,0,1,1,3,0.21710323,13,5,Money Laundering,Black Eagles
+8,36,1,0,0,1,0,4,0.98286012,10,6,Cybercrime,Shadow Syndicate
+2,17,1,1,0,1,0,4,0.07221319,17,8,Arms Trafficking,Red Serpents
+5,56,0,1,0,1,0,0,0.08379097,2,11,Human Trafficking,None
+1,37,0,0,0,1,1,4,0.45495688,21,0,Drug Trafficking,None
+1,35,0,0,0,1,1,3,0.12890259,17,6,Murder,None
+1,30,0,1,0,1,1,0,0.38510612,3,9,Robbery,None
+6,31,0,0,0,1,0,0,0.81462506,16,6,Arms Trafficking,None
+0,29,0,1,1,0,1,0,0.83194154,17,8,Drug Trafficking,None
+5,32,1,1,1,1,0,1,0.23884516,20,10,Drug Trafficking,Red Serpents
+0,31,1,1,0,0,0,4,0.96551792,3,0,Murder,Iron Fist
+3,40,0,1,0,0,1,0,0.72276868,4,5,Arson,None
+9,29,1,0,1,0,0,4,0.12663713,16,13,Burglary,Red Serpents
+7,60,0,1,0,0,0,4,0.70239872,2,7,Murder,None
+9,37,0,0,0,1,1,3,0.72753643,18,11,Extortion,None
+4,52,1,1,0,0,0,3,0.69938474,5,6,Car Theft,Iron Fist
+7,17,0,1,1,0,0,1,0.62509155,2,10,Fraud,None
+2,54,0,0,0,1,1,2,0.6656505,20,11,Money Laundering,None
+1,38,0,0,0,0,1,4,0.64954296,17,0,Cybercrime,None
+0,32,1,1,0,1,0,4,0.33165784,14,6,Arms Trafficking,Night Wolves
+0,47,1,0,0,0,0,1,0.99984924,14,10,Extortion,Shadow Syndicate
+1,59,0,1,1,0,1,2,0.65025507,2,3,Arson,None
+1,29,0,0,0,0,0,2,0.93165925,0,0,Burglary,None
+7,54,0,0,1,0,0,3,0.04722488,20,1,Money Laundering,None
+9,33,0,1,0,0,0,1,0.97207934,18,11,Arms Trafficking,None
+2,38,1,1,0,1,1,2,0.6067162,15,12,Extortion,Night Wolves
+8,34,1,0,0,0,0,2,0.61958259,20,10,Vandalism,Shadow Syndicate
+9,34,1,0,1,1,0,2,0.3409478,11,12,Money Laundering,Red Serpents
+8,62,0,1,0,1,0,3,0.6067929,5,11,Arms Trafficking,None
+2,47,1,1,0,1,1,0,0.08514364,8,7,Extortion,Red Serpents
+6,30,0,1,1,0,0,1,0.3115123,10,7,Robbery,None
+2,64,0,1,0,0,0,3,0.84860655,0,14,Fraud,None
+5,31,0,0,0,1,0,4,0.02929944,23,2,Arms Trafficking,None
+0,35,0,0,0,1,0,3,0.87148854,16,0,Money Laundering,None
+5,51,0,0,1,0,0,3,0.90031224,11,7,Assault,None
+3,46,1,1,1,1,0,0,0.26825036,6,11,Robbery,Iron Fist
+6,54,1,1,0,0,1,3,0.84848221,11,0,Kidnapping,Black Eagles
+1,43,1,1,0,0,1,4,0.33836787,7,13,Murder,Black Eagles
+6,36,0,1,0,0,0,2,0.02784105,2,14,Cybercrime,None
+5,47,0,1,0,1,0,0,0.72726847,0,13,Assault,None
+7,38,1,0,0,1,0,0,0.66033583,23,7,Robbery,Black Eagles
+8,51,0,0,1,0,0,1,0.88592211,6,1,Car Theft,None
+5,59,0,0,0,0,0,1,0.38724605,19,5,Car Theft,None
+9,27,0,1,1,0,1,4,0.52953362,13,5,Robbery,None
+3,29,0,1,1,0,0,3,0.84109617,6,9,Drug Trafficking,None
+6,61,1,0,1,0,0,0,0.26522852,11,13,Arson,Red Serpents

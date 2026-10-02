@@ -8,9 +8,9 @@ import random
 import string
 from app.database import get_db
 from app import models, schemas
-from app.security import get_current_user, require_any_role, require_officer_or_admin
+from app.security import require_any_role, require_officer_or_admin
 from app.utils.audit import create_audit_log, create_notification
-from app.utils.reports import generate_case_report
+from app.utils.reports import generate_case_report, generate_case_excel
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -67,13 +67,24 @@ async def list_cases(
 async def create_case(
     data: schemas.CaseCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_any_role)
+    current_user: models.User = Depends(require_officer_or_admin)
 ):
     case_number = generate_case_number()
     while db.query(models.Case).filter(models.Case.case_number == case_number).first():
         case_number = generate_case_number()
 
     fir_number = data.fir_number or generate_fir_number()
+
+    criminal_ids = list(dict.fromkeys(data.criminal_ids or []))
+    if len(criminal_ids) != len(data.criminal_ids or []):
+        raise HTTPException(status_code=400, detail="Duplicate criminal IDs are not allowed")
+
+    criminals = []
+    for cid in criminal_ids:
+        criminal = db.query(models.Criminal).filter(models.Criminal.id == cid).first()
+        if not criminal:
+            raise HTTPException(status_code=404, detail=f"Criminal {cid} not found")
+        criminals.append(criminal)
 
     case_data = data.model_dump(exclude={"criminal_ids"})
     case_data["case_number"] = case_number
@@ -82,17 +93,15 @@ async def create_case(
 
     case = models.Case(**case_data)
     db.add(case)
+    db.flush()
+
+    for criminal in criminals:
+        db.add(models.CaseCriminal(case_id=case.id, criminal_id=criminal.id, role="suspect"))
+
     db.commit()
     db.refresh(case)
 
-    # Link criminals
-    for cid in (data.criminal_ids or []):
-        cc = models.CaseCriminal(case_id=case.id, criminal_id=cid, role="suspect")
-        db.add(cc)
-    db.commit()
-    db.refresh(case)
-
-    create_audit_log(db, "CASE_CREATED", user_id=current_user.id, username=current_user.username,
+    create_audit_log(db, "CASE_CREATED", user_id=current_user.id, username=current_user.username, role=current_user.role,
                      resource_type="case", resource_id=case.id,
                      details={"case_number": case_number, "title": data.title})
     return case
@@ -107,6 +116,8 @@ async def get_case(
     case = db.query(models.Case).filter(models.Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    if current_user.role.value == "investigating_officer" and case.assigned_officer_id not in (None, current_user.id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this case")
     return case
 
 
@@ -115,13 +126,16 @@ async def update_case(
     case_id: int,
     data: schemas.CaseUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_any_role)
+    current_user: models.User = Depends(require_officer_or_admin)
 ):
     case = db.query(models.Case).filter(models.Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    if current_user.role.value == "investigating_officer" and case.assigned_officer_id not in (None, current_user.id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this case")
 
     update_data = data.model_dump(exclude_unset=True, exclude={"criminal_ids"})
+    before = {k: getattr(case, k) for k in update_data.keys()}
 
     # Handle status transition
     if "status" in update_data and update_data["status"] == "closed":
@@ -132,6 +146,10 @@ async def update_case(
 
     # Update linked criminals if provided
     if data.criminal_ids is not None:
+        for cid in data.criminal_ids:
+            if not db.query(models.Criminal).filter(models.Criminal.id == cid).first():
+                db.rollback()
+                raise HTTPException(status_code=404, detail=f"Criminal {cid} not found")
         db.query(models.CaseCriminal).filter(models.CaseCriminal.case_id == case_id).delete()
         for cid in data.criminal_ids:
             cc = models.CaseCriminal(case_id=case_id, criminal_id=cid, role="suspect")
@@ -139,8 +157,9 @@ async def update_case(
 
     db.commit()
     db.refresh(case)
-    create_audit_log(db, "CASE_UPDATED", user_id=current_user.id, username=current_user.username,
-                     resource_type="case", resource_id=case_id)
+    after = {k: getattr(case, k) for k in update_data.keys()}
+    create_audit_log(db, "CASE_UPDATED", user_id=current_user.id, username=current_user.username, role=current_user.role,
+                     resource_type="case", resource_id=case_id, details={"before": before, "after": after})
     return case
 
 
@@ -157,7 +176,7 @@ async def delete_case(
         raise HTTPException(status_code=404, detail="Case not found")
     db.delete(case)
     db.commit()
-    create_audit_log(db, "CASE_DELETED", user_id=current_user.id, username=current_user.username,
+    create_audit_log(db, "CASE_DELETED", user_id=current_user.id, username=current_user.username, role=current_user.role,
                      resource_type="case", resource_id=case_id)
     return {"message": "Case deleted"}
 
@@ -173,13 +192,15 @@ async def assign_officer(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
     officer = db.query(models.User).filter(models.User.id == officer_id).first()
-    if not officer:
+    if not officer or officer.role.value != "investigating_officer":
         raise HTTPException(status_code=404, detail="Officer not found")
+    if current_user.role.value == "investigating_officer" and case.assigned_officer_id not in (None, current_user.id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this case")
     case.assigned_officer_id = officer_id
     if case.status == models.CaseStatus.open:
         case.status = models.CaseStatus.under_investigation
     db.commit()
-    create_audit_log(db, "OFFICER_ASSIGNED", user_id=current_user.id, username=current_user.username,
+    create_audit_log(db, "OFFICER_ASSIGNED", user_id=current_user.id, username=current_user.username, role=current_user.role,
                      resource_type="case", resource_id=case_id,
                      details={"officer_id": officer_id, "officer_name": officer.full_name})
     return {"message": f"Officer {officer.full_name} assigned to case {case.case_number}"}
@@ -191,8 +212,16 @@ async def add_criminal_to_case(
     criminal_id: int,
     role: str = "suspect",
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_any_role)
+    current_user: models.User = Depends(require_officer_or_admin)
 ):
+    case = db.query(models.Case).filter(models.Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if current_user.role.value == "investigating_officer" and case.assigned_officer_id not in (None, current_user.id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this case")
+    criminal = db.query(models.Criminal).filter(models.Criminal.id == criminal_id).first()
+    if not criminal:
+        raise HTTPException(status_code=404, detail="Criminal not found")
     existing = db.query(models.CaseCriminal).filter(
         models.CaseCriminal.case_id == case_id,
         models.CaseCriminal.criminal_id == criminal_id
@@ -202,6 +231,8 @@ async def add_criminal_to_case(
     cc = models.CaseCriminal(case_id=case_id, criminal_id=criminal_id, role=role)
     db.add(cc)
     db.commit()
+    create_audit_log(db, "CRIMINAL_LINKED_TO_CASE", user_id=current_user.id, username=current_user.username, role=current_user.role,
+                     resource_type="case_criminal", resource_id=cc.id, details={"case_id": case_id, "criminal_id": criminal_id, "role": role})
     return {"message": "Criminal linked to case"}
 
 
@@ -210,7 +241,7 @@ async def add_evidence(
     case_id: int,
     data: schemas.EvidenceCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_any_role)
+    current_user: models.User = Depends(require_officer_or_admin)
 ):
     case = db.query(models.Case).filter(models.Case.id == case_id).first()
     if not case:
@@ -220,7 +251,7 @@ async def add_evidence(
     db.add(evidence)
     db.commit()
     db.refresh(evidence)
-    create_audit_log(db, "EVIDENCE_ADDED", user_id=current_user.id, username=current_user.username,
+    create_audit_log(db, "EVIDENCE_ADDED", user_id=current_user.id, username=current_user.username, role=current_user.role,
                      resource_type="evidence", resource_id=evidence.id)
     return evidence
 
@@ -230,7 +261,7 @@ async def add_victim(
     case_id: int,
     data: schemas.VictimCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_any_role)
+    current_user: models.User = Depends(require_officer_or_admin)
 ):
     case = db.query(models.Case).filter(models.Case.id == case_id).first()
     if not case:
@@ -239,7 +270,7 @@ async def add_victim(
     db.add(victim)
     db.commit()
     db.refresh(victim)
-    create_audit_log(db, "VICTIM_ADDED", user_id=current_user.id, username=current_user.username,
+    create_audit_log(db, "VICTIM_ADDED", user_id=current_user.id, username=current_user.username, role=current_user.role,
                      resource_type="victim", resource_id=victim.id)
     return victim
 
@@ -253,6 +284,8 @@ async def get_case_report(
     case = db.query(models.Case).filter(models.Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    if current_user.role.value == "investigating_officer" and case.assigned_officer_id not in (None, current_user.id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this case")
 
     case_dict = {
         "case_number": case.case_number,
@@ -281,6 +314,11 @@ async def get_case_report(
              "description": e.description, "collected_by": e.collected_by,
              "status": e.status}
             for e in case.evidence
+        ],
+        "victims": [
+            {"name": f"{v.first_name} {v.last_name}", "age": v.age, "gender": v.gender,
+             "status": v.status, "injury_description": v.injury_description}
+            for v in case.victims
         ]
     }
     pdf_bytes = generate_case_report(case_dict)
@@ -291,3 +329,56 @@ async def get_case_report(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=case_{case.case_number.replace('/', '_')}.pdf"}
     )
+
+
+@router.put("/{case_id}/evidence/{evidence_id}", response_model=schemas.EvidenceOut)
+async def update_evidence(
+    case_id: int, evidence_id: int, data: schemas.EvidenceCreate,
+    db: Session = Depends(get_db), current_user: models.User = Depends(require_officer_or_admin)
+):
+    case = db.query(models.Case).filter(models.Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if current_user.role.value == "investigating_officer" and case.assigned_officer_id not in (None, current_user.id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this case")
+    evidence = db.query(models.Evidence).filter(models.Evidence.id == evidence_id, models.Evidence.case_id == case_id).first()
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    before = {k: getattr(evidence, k) for k in data.model_dump(exclude_unset=True).keys()}
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(evidence, k, v)
+    db.commit(); db.refresh(evidence)
+    after = {k: getattr(evidence, k) for k in data.model_dump(exclude_unset=True).keys()}
+    create_audit_log(db, "EVIDENCE_UPDATED", user_id=current_user.id, username=current_user.username, role=current_user.role,
+                     resource_type="evidence", resource_id=evidence.id, details={"before": before, "after": after})
+    return evidence
+
+
+@router.get("/{case_id}/report/excel")
+async def get_case_excel_report(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_any_role)
+):
+    from fastapi.responses import Response
+
+    case = db.query(models.Case).filter(models.Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if current_user.role.value == "investigating_officer" and case.assigned_officer_id not in (None, current_user.id):
+        raise HTTPException(status_code=403, detail="You are not assigned to this case")
+
+    case_dict = {
+        "case_number": case.case_number, "fir_number": case.fir_number,
+        "fir_date": str(case.fir_date) if case.fir_date else None,
+        "status": case.status.value,
+        "officer_name": case.assigned_officer.full_name if case.assigned_officer else "Unassigned",
+        "criminals": [{"criminal": {"crn": cc.criminal.crn, "first_name": cc.criminal.first_name, "last_name": cc.criminal.last_name}, "role": cc.role} for cc in case.criminals],
+        "victims": [{"name": f"{v.first_name} {v.last_name}", "age": v.age, "gender": v.gender, "status": v.status, "injury_description": v.injury_description} for v in case.victims],
+        "evidence": [{"evidence_number": e.evidence_number, "type": e.type, "description": e.description, "collected_by": e.collected_by, "status": e.status} for e in case.evidence],
+    }
+    xlsx = generate_case_excel(case_dict)
+    create_audit_log(db, "CASE_REPORT_EXCEL_GENERATED", user_id=current_user.id,
+                     username=current_user.username, role=current_user.role, resource_type="case", resource_id=case_id)
+    return Response(content=xlsx, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename=case_{case.case_number.replace('/', '_')}.xlsx"})

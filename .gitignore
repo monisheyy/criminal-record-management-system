@@ -1,0 +1,46 @@
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Frontend
+node_modules/
+dist/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated test and build output
+
+frontend_build.log
+frontend_build.exit
+frontend_test_results.txt
+evaluation_stdout.json
+ml_evaluation_report.json
+
+# Environment secrets
+
+.env
+backend/.env
+
+# Python and frontend dependencies
+
+**pycache**/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+
