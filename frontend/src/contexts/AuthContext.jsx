@@ -27,7 +27,8 @@ export function AuthProvider({ children }) {
     return userData;
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try { await authAPI.logout(); } catch {}
     localStorage.removeItem('acrms_token');
     localStorage.removeItem('acrms_user');
     setUser(null);

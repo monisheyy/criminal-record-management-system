@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { notificationsAPI } from '../services/api';
@@ -40,20 +40,19 @@ const NAV = [
   },
 ];
 
-function NotificationPanel({ onClose }) {
-  const [notifications, setNotifications] = useState([]);
+function NotificationPanel({ onClose, notifications, setNotifications }) {
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    notificationsAPI.list({ limit: 20 })
-      .then(r => setNotifications(r.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  useEffect(() => { setLoading(false); }, []);
 
   const markAllRead = async () => {
     await notificationsAPI.markAllRead();
     setNotifications(n => n.map(x => ({ ...x, is_read: true })));
+  };
+
+  const markRead = async (id) => {
+    await notificationsAPI.markRead(id);
+    setNotifications(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
   };
 
   const typeColor = (t) => {
@@ -91,7 +90,7 @@ function NotificationPanel({ onClose }) {
             <div
               key={n.id}
               className={`notif-item ${!n.is_read ? 'unread' : ''}`}
-              onClick={async () => { await notificationsAPI.markRead(n.id); }}
+              onClick={() => markRead(n.id)}
             >
               <div className={`notif-dot ${typeColor(n.notification_type)}`} />
               <div className="notif-content">
@@ -113,18 +112,67 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [showNotifs, setShowNotifs] = useState(false);
+  const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [realtimeStatus, setRealtimeStatus] = useState('connecting');
   const notifRef = useRef(null);
+  const wsRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const reconnectAttemptRef = useRef(0);
+
+  const refreshNotifications = useCallback(() => {
+    notificationsAPI.list({ limit: 50 })
+      .then(r => {
+        const data = r.data || [];
+        setNotifications(data);
+        setUnreadCount(data.filter(n => !n.is_read).length);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
-    const fetchUnread = () => {
-      notificationsAPI.list({ unread_only: true, limit: 50 })
-        .then(r => setUnreadCount((r.data || []).length))
-        .catch(() => {});
-    };
-    fetchUnread();
-    const t = setInterval(fetchUnread, 30000);
+    refreshNotifications();
+    // Polling remains an intentional recovery fallback for dropped sockets.
+    const t = setInterval(refreshNotifications, 30000);
     return () => clearInterval(t);
+  }, [refreshNotifications]);
+
+  useEffect(() => {
+    let stopped = false;
+    const connect = () => {
+      if (stopped || !localStorage.getItem('acrms_token')) return;
+      setRealtimeStatus('connecting');
+      const ws = new WebSocket(notificationsAPI.websocketUrl());
+      wsRef.current = ws;
+      ws.onopen = () => {
+        reconnectAttemptRef.current = 0;
+        setRealtimeStatus('connected');
+      };
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.event === 'notification.created' && payload.notification) {
+            const incoming = payload.notification;
+            setNotifications(prev => [incoming, ...prev.filter(n => n.id !== incoming.id)].slice(0, 50));
+            setUnreadCount(prev => prev + (incoming.is_read ? 0 : 1));
+          }
+        } catch { /* ignore malformed server messages */ }
+      };
+      ws.onclose = () => {
+        if (stopped) return;
+        setRealtimeStatus('reconnecting');
+        const delay = Math.min(30000, 1000 * (2 ** reconnectAttemptRef.current));
+        reconnectAttemptRef.current = Math.min(reconnectAttemptRef.current + 1, 5);
+        reconnectTimerRef.current = setTimeout(connect, delay);
+      };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    return () => {
+      stopped = true;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (wsRef.current) wsRef.current.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -212,7 +260,7 @@ export default function Layout({ children }) {
             <span>Operational</span>
           </div>
           <span className="header-status-divider">/</span>
-          <span style={{ color: 'var(--text-secondary)' }}>Live Connection</span>
+          <span style={{ color: 'var(--text-secondary)' }}>{realtimeStatus === 'connected' ? 'Live Connection' : realtimeStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting'}</span>
         </div>
 
         <div className="header-controls">
@@ -225,7 +273,7 @@ export default function Layout({ children }) {
               <Bell size={15} />
               {unreadCount > 0 && <span className="notif-badge-dot" />}
             </button>
-            {showNotifs && <NotificationPanel onClose={() => setShowNotifs(false)} />}
+            {showNotifs && <NotificationPanel onClose={() => setShowNotifs(false)} notifications={notifications} setNotifications={setNotifications} />}
           </div>
 
           <div className="user-pill">

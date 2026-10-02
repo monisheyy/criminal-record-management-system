@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { casesAPI } from '../services/api';
+import NetworkGraph from '../components/NetworkGraph';
 import { StatusBadge, PriorityBadge } from '../components/RiskBadge';
 
 const CaseDetails = () => {
@@ -103,20 +104,20 @@ const CaseDetails = () => {
     }
   };
 
-  const handleDownloadReport = async () => {
+  const handleDownloadReport = async (format = 'pdf') => {
     try {
-      const fn = casesAPI.report || casesAPI.downloadReport;
-      const res = await fn(id);
+      const res = format === 'excel' ? await casesAPI.reportExcel(id) : await casesAPI.report(id);
       const url = window.URL.createObjectURL(new Blob([res.data || res]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `case_report_${caseDetails.case_number || caseDetails.caseNumber || id}.pdf`);
+      link.setAttribute('download', `case_report_${caseDetails.case_number || caseDetails.caseNumber || id}.${format === 'excel' ? 'xlsx' : 'pdf'}`);
       document.body.appendChild(link);
       link.click();
       link.remove();
-      toast.success('Case report downloaded.');
+      window.URL.revokeObjectURL(url);
+      toast.success(`Case ${format === 'excel' ? 'Excel' : 'PDF'} report downloaded.`);
     } catch (err) {
-      toast.error('Failed to download case report.');
+      toast.error(`Failed to download case ${format === 'excel' ? 'Excel' : 'PDF'} report.`);
     }
   };
 
@@ -157,8 +158,11 @@ const CaseDetails = () => {
         </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={handleDownloadReport}>
+          <button className="btn btn-secondary" onClick={() => handleDownloadReport('pdf')}>
             <Download size={14} /> PDF Report
+          </button>
+          <button className="btn btn-secondary" onClick={() => handleDownloadReport('excel')}>
+            <FileText size={14} /> Excel Report
           </button>
           <button className="btn btn-primary" onClick={() => toggleModal('assign', true)}>
             <UserPlus size={14} /> Assign Officer
@@ -190,6 +194,8 @@ const CaseDetails = () => {
           <span>Assigned Officer: <strong>{caseDetails.assignedOfficer?.name || caseDetails.assigned_officer?.full_name || 'Unassigned'}</strong></span>
         </div>
       </div>
+
+      <NetworkGraph caseId={Number(id)} depth={2} />
 
       {/* Navigation Tabs */}
       <div className="tab-nav">

@@ -1,5 +1,6 @@
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Enum, JSON
+    Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Enum, JSON,
+    Index, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -47,6 +48,24 @@ class User(Base):
     ai_reviews = relationship("AIPrediction", back_populates="reviewed_by_officer")
 
 
+class PasswordRecovery(Base):
+    __tablename__ = "password_recovery"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    request_ip = Column(String(45), nullable=True, index=True)
+    otp_hash = Column(String(64), nullable=False)
+    otp_expires_at = Column(DateTime(timezone=True), nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=5)
+    reset_token_hash = Column(String(64), nullable=True)
+    reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    reset_consumed_at = Column(DateTime(timezone=True), nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class Gang(Base):
     __tablename__ = "gangs"
 
@@ -66,6 +85,7 @@ class Gang(Base):
 
 class Criminal(Base):
     __tablename__ = "criminals"
+    __table_args__ = (Index("ix_criminals_gang", "gang_id"), Index("ix_criminals_wanted_risk", "is_wanted", "risk_score"),)
 
     id = Column(Integer, primary_key=True, index=True)
     crn = Column(String(20), unique=True, index=True, nullable=False)  # Criminal Record Number
@@ -105,9 +125,9 @@ class Criminal(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     gang = relationship("Gang", back_populates="members")
-    cases = relationship("CaseCriminal", back_populates="criminal")
+    cases = relationship("CaseCriminal", back_populates="criminal", cascade="all, delete-orphan")
     ai_predictions = relationship("AIPrediction", back_populates="criminal")
-    history_records = relationship("CriminalHistory", back_populates="criminal")
+    history_records = relationship("CriminalHistory", back_populates="criminal", cascade="all, delete-orphan")
 
 
 class CriminalHistory(Base):
@@ -128,6 +148,7 @@ class CriminalHistory(Base):
 
 class Case(Base):
     __tablename__ = "cases"
+    __table_args__ = (Index("uq_cases_fir_number", "fir_number", unique=True), Index("ix_cases_assigned_status", "assigned_officer_id", "status"),)
 
     id = Column(Integer, primary_key=True, index=True)
     case_number = Column(String(30), unique=True, index=True, nullable=False)
@@ -157,18 +178,19 @@ class Case(Base):
     closed_at = Column(DateTime(timezone=True), nullable=True)
 
     assigned_officer = relationship("User", back_populates="cases_assigned", foreign_keys=[assigned_officer_id])
-    criminals = relationship("CaseCriminal", back_populates="case")
-    evidence = relationship("Evidence", back_populates="case")
-    victims = relationship("Victim", back_populates="case")
-    ai_predictions = relationship("AIPrediction", back_populates="case")
+    criminals = relationship("CaseCriminal", back_populates="case", cascade="all, delete-orphan")
+    evidence = relationship("Evidence", back_populates="case", cascade="all, delete-orphan")
+    victims = relationship("Victim", back_populates="case", cascade="all, delete-orphan")
+    ai_predictions = relationship("AIPrediction", back_populates="case", cascade="all, delete-orphan")
 
 
 class CaseCriminal(Base):
     __tablename__ = "case_criminals"
+    __table_args__ = (UniqueConstraint("case_id", "criminal_id", name="uq_case_criminal"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
-    criminal_id = Column(Integer, ForeignKey("criminals.id"), nullable=False)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False, index=True)
+    criminal_id = Column(Integer, ForeignKey("criminals.id"), nullable=False, index=True)
     role = Column(String(50), nullable=True)  # suspect, accused, convicted
     added_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -178,9 +200,10 @@ class CaseCriminal(Base):
 
 class Evidence(Base):
     __tablename__ = "evidence"
+    __table_args__ = (UniqueConstraint("case_id", "evidence_number", name="uq_case_evidence_number"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False, index=True)
     evidence_number = Column(String(30), nullable=False)
     type = Column(String(50), nullable=True)  # physical, digital, forensic, witness
     description = Column(Text, nullable=True)
@@ -216,6 +239,7 @@ class Victim(Base):
 
 class AIPrediction(Base):
     __tablename__ = "ai_predictions"
+    __table_args__ = (Index("ix_ai_predictions_criminal_created", "criminal_id", "created_at"), Index("ix_ai_predictions_case_created", "case_id", "created_at"),)
 
     id = Column(Integer, primary_key=True, index=True)
     criminal_id = Column(Integer, ForeignKey("criminals.id"), nullable=True)
@@ -256,6 +280,7 @@ class AIPrediction(Base):
 
 class Notification(Base):
     __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notifications_target_user_read", "target_user_id", "is_read"), Index("ix_notifications_role_read", "target_role", "is_read"),)
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(200), nullable=False)
@@ -271,14 +296,18 @@ class Notification(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = (Index("ix_audit_logs_action_created", "action", "created_at"), Index("ix_audit_logs_resource", "resource_type", "resource_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     username = Column(String(50), nullable=True)
+    role = Column(String(30), nullable=True)
     action = Column(String(100), nullable=False)
     resource_type = Column(String(50), nullable=True)
     resource_id = Column(Integer, nullable=True)
     details = Column(JSON, nullable=True)
+    status = Column(String(20), nullable=False, default="success")
+    reason = Column(Text, nullable=True)
     ip_address = Column(String(45), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -297,6 +326,9 @@ class MLModel(Base):
     f1_score = Column(Float, default=0.0)
     training_samples = Column(Integer, default=0)
     feature_importances = Column(JSON, nullable=True)
+    evaluation_metadata = Column(JSON, nullable=True)
+    dataset_version = Column(String(50), nullable=True)
+    evaluation_method = Column(String(120), nullable=True)
     trained_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True)
     notes = Column(Text, nullable=True)
