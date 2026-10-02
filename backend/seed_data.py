@@ -567,21 +567,31 @@ def seed_database(db: Session):
 
     # ── ML Model Record ───────────────────────────────────────────────────────
     print("  Creating ML model record...")
+    ml_meta = pipeline.get_metadata()
+    crime_meta = ml_meta.get('crime_classifier', {})
     db.add(models.MLModel(
-        version='v1.0',
+        version=ml_meta.get('model_version', pipeline.model_version),
         model_type='crime_classifier',
-        accuracy=0.874,
-        precision_score=0.861,
-        recall_score=0.868,
-        f1_score=0.864,
-        training_samples=480,
-        feature_importances={
-            'prior_convictions': 0.31, 'gang_affiliated': 0.22,
-            'weapons_involved': 0.15, 'drug_involvement': 0.12,
-            'age': 0.09, 'financial_motivation': 0.07, 'other': 0.04
+        accuracy=float(crime_meta.get('accuracy', 0.0)),
+        precision_score=float(crime_meta.get('precision', 0.0)),
+        recall_score=float(crime_meta.get('recall', 0.0)),
+        f1_score=float(crime_meta.get('f1', 0.0)),
+        training_samples=int(crime_meta.get('training_samples', 0)),
+        feature_importances=ml_meta.get('feature_importances'),
+        evaluation_metadata={
+            "crime_classifier": crime_meta,
+            "gang_predictor": ml_meta.get("gang_predictor", {}),
+            "evaluation_method": ml_meta.get("evaluation_method"),
+            "dataset_type": ml_meta.get("dataset", {}).get("dataset_type"),
+            "dataset_version": ml_meta.get("dataset", {}).get("dataset_version"),
+            "dataset_sha256": ml_meta.get("dataset", {}).get("sha256"),
         },
+        dataset_version=ml_meta.get("dataset", {}).get("dataset_version"),
+        evaluation_method=ml_meta.get("evaluation_method"),
         is_active=True,
-        notes='Initial training on synthetic dataset v1.0',
+        notes=(f"Seeded model metadata from pipeline; dataset="
+               f"{ml_meta.get('dataset', {}).get('dataset_version', 'unknown')}; "
+               f"dataset_sha256={ml_meta.get('dataset', {}).get('sha256', 'unknown')}"),
     ))
     db.commit()
     print("  ✓ ML model record created")

@@ -27,6 +27,7 @@ API.interceptors.response.use(
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 export const authAPI = {
+  logout: () => API.post('/api/auth/logout'),
   login: (username, password) => {
     const form = new URLSearchParams();
     form.append('username', username);
@@ -36,6 +37,9 @@ export const authAPI = {
     });
   },
   me: () => API.get('/api/auth/me'),
+  requestRecovery: (identifier) => API.post('/api/auth/password-recovery/request', { identifier }),
+  verifyRecovery: (identifier, otp) => API.post('/api/auth/password-recovery/verify', { identifier, otp }),
+  resetPassword: (reset_token, new_password) => API.post('/api/auth/password-recovery/reset', { reset_token, new_password }),
 };
 
 // ── Criminals ────────────────────────────────────────────────────────────────
@@ -48,6 +52,7 @@ export const criminalsAPI = {
   checkDuplicate: (params) => API.get('/api/criminals/check-duplicate', { params }),
   history: (id) => API.get(`/api/criminals/${id}/history`),
   report: (id) => API.get(`/api/criminals/${id}/report`, { responseType: 'blob' }),
+  reportExcel: (id) => API.get(`/api/criminals/${id}/report/excel`, { responseType: 'blob' }),
 };
 
 // ── Cases ────────────────────────────────────────────────────────────────────
@@ -63,6 +68,7 @@ export const casesAPI = {
   addCriminal: (caseId, criminalId, role) =>
     API.post(`/api/cases/${caseId}/criminals?criminal_id=${criminalId}&role=${role}`),
   report: (id) => API.get(`/api/cases/${id}/report`, { responseType: 'blob' }),
+  reportExcel: (id) => API.get(`/api/cases/${id}/report/excel`, { responseType: 'blob' }),
 };
 
 // ── AI Predictions ────────────────────────────────────────────────────────────
@@ -83,6 +89,8 @@ export const adminAPI = {
   deleteUser: (id) => API.delete(`/api/admin/users/${id}`),
   auditLogs: (params) => API.get('/api/admin/audit-logs', { params }),
   dashboard: () => API.get('/api/admin/dashboard'),
+  dashboardExcel: () => API.get('/api/admin/dashboard/report/excel', { responseType: 'blob' }),
+  dashboardPdf: () => API.get('/api/admin/dashboard/report/pdf', { responseType: 'blob' }),
 };
 
 // ── Gangs ─────────────────────────────────────────────────────────────────────
@@ -93,11 +101,23 @@ export const gangsAPI = {
   delete: (id) => API.delete(`/api/gangs/${id}`),
 };
 
+
+// ── Intelligence Network ───────────────────────────────────────────────────
+export const intelligenceAPI = {
+  network: (params) => API.get('/api/intelligence/network', { params }),
+};
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 export const notificationsAPI = {
   list: (params) => API.get('/api/notifications', { params }),
   markRead: (id) => API.post(`/api/notifications/${id}/read`),
   markAllRead: () => API.post('/api/notifications/read-all'),
+  websocketUrl: () => {
+    const base = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const wsBase = base.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+    const token = localStorage.getItem('acrms_token');
+    return `${wsBase}/api/notifications/ws?token=${encodeURIComponent(token || '')}`;
+  },
 };
 
 export default API;
