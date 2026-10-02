@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Network, ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react';
-import { intelligenceAPI } from '../services/api';
+import { getErrorMessage, intelligenceAPI } from '../services/api';
 
 const TYPE_META = {
   criminal: { label: 'Criminal', stroke: '#ef4444' },
@@ -52,7 +52,7 @@ export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, he
     setError('');
     intelligenceAPI.network({ criminal_id: criminalId, case_id: caseId, gang_id: gangId, depth })
       .then(res => mounted && setGraph(res.data || { nodes: [], edges: [], metadata: null }))
-      .catch(err => mounted && setError(err.response?.data?.detail || 'Unable to load network intelligence.'))
+      .catch(err => mounted && setError(getErrorMessage(err, 'Unable to load network intelligence.')))
       .finally(() => mounted && setLoading(false));
     return () => { mounted = false; };
   }, [criminalId, caseId, gangId, depth]);

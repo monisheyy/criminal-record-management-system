@@ -1,23 +1,39 @@
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, status
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
 from typing import List
-from jose import JWTError, jwt
 
+from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDisconnect, status
+from jwt import PyJWTError as JWTError
+from sqlalchemy import and_, exists, or_
+from sqlalchemy.orm import Session
+
+from app.config import settings
 from app.database import get_db, SessionLocal
 from app import models, schemas
-from app.security import require_any_role, SECRET_KEY, ALGORITHM
+from app.security import SESSION_COOKIE_NAME, require_any_role, resolve_token_user
 from app.utils.notification_realtime import notification_manager
+from app.utils.pagination import MAX_PAGE_SIZE, paginate
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
-def _notification_visible_to_user(notification: models.Notification, user: models.User) -> bool:
-    return (
-        notification.target_user_id == user.id
-        or notification.target_role == user.role.value
-        or notification.target_role is None
+def _visible_filter(user: models.User):
+    return or_(
+        models.Notification.target_user_id == user.id,
+        and_(models.Notification.target_user_id.is_(None), models.Notification.target_role == user.role.value),
+        and_(models.Notification.target_user_id.is_(None), models.Notification.target_role.is_(None)),
     )
+
+
+def _read_by_user(user: models.User):
+    return exists().where(
+        models.NotificationRead.notification_id == models.Notification.id,
+        models.NotificationRead.user_id == user.id,
+    )
+
+
+def _notification_visible_to_user(notification: models.Notification, user: models.User) -> bool:
+    if notification.target_user_id is not None:
+        return notification.target_user_id == user.id
+    return notification.target_role in (None, user.role.value)
 
 
 def _notification_payload(notification: models.Notification) -> dict:
@@ -28,7 +44,7 @@ def _notification_payload(notification: models.Notification) -> dict:
             "title": notification.title,
             "message": notification.message,
             "notification_type": notification.notification_type,
-            "is_read": notification.is_read,
+            "is_read": False,
             "related_criminal_id": notification.related_criminal_id,
             "related_case_id": notification.related_case_id,
             "created_at": notification.created_at.isoformat() if notification.created_at else None,
@@ -38,22 +54,29 @@ def _notification_payload(notification: models.Notification) -> dict:
 
 @router.get("", response_model=List[schemas.NotificationOut])
 async def list_notifications(
+    response: Response,
     unread_only: bool = Query(False),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_any_role)
 ):
-    q = db.query(models.Notification).filter(
-        or_(
-            models.Notification.target_role == current_user.role.value,
-            models.Notification.target_role.is_(None),
-            models.Notification.target_user_id == current_user.id,
-        )
-    )
+    """Notifications visible to the caller, with per-user read state."""
+    read_flag = _read_by_user(current_user)
+    q = db.query(models.Notification, read_flag.label("read_by_me")).filter(_visible_filter(current_user))
     if unread_only:
-        q = q.filter(models.Notification.is_read.is_(False))
-    return q.order_by(models.Notification.created_at.desc()).offset(skip).limit(limit).all()
+        q = q.filter(~read_flag)
+    unread = db.query(models.Notification.id).filter(_visible_filter(current_user), ~read_flag).count()
+    response.headers["X-Unread-Count"] = str(unread)
+    rows = paginate(q.order_by(models.Notification.created_at.desc(), models.Notification.id.desc()), response, skip, limit)
+    return [
+        schemas.NotificationOut(
+            id=n.id, title=n.title, message=n.message, notification_type=n.notification_type,
+            is_read=bool(read), related_criminal_id=n.related_criminal_id,
+            related_case_id=n.related_case_id, created_at=n.created_at,
+        )
+        for n, read in rows
+    ]
 
 
 @router.post("/{notification_id}/read")
@@ -63,10 +86,15 @@ async def mark_read(
     current_user: models.User = Depends(require_any_role)
 ):
     notif = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
-    if not notif or not _notification_visible_to_user(notif, current_user):
-        return {"message": "Marked as read"}
-    notif.is_read = True
-    db.commit()
+    # Identical response for missing and foreign notifications (no existence oracle).
+    if notif and _notification_visible_to_user(notif, current_user):
+        already = db.query(models.NotificationRead.id).filter(
+            models.NotificationRead.notification_id == notification_id,
+            models.NotificationRead.user_id == current_user.id,
+        ).first()
+        if not already:
+            db.add(models.NotificationRead(notification_id=notification_id, user_id=current_user.id))
+            db.commit()
     return {"message": "Marked as read"}
 
 
@@ -75,33 +103,38 @@ async def mark_all_read(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_any_role)
 ):
-    db.query(models.Notification).filter(
-        or_(
-            models.Notification.target_role == current_user.role.value,
-            models.Notification.target_user_id == current_user.id,
-            models.Notification.target_role.is_(None),
-        ),
-        models.Notification.is_read.is_(False),
-    ).update({"is_read": True}, synchronize_session=False)
+    unread_ids = [row.id for row in db.query(models.Notification.id).filter(
+        _visible_filter(current_user), ~_read_by_user(current_user)
+    ).all()]
+    for notification_id in unread_ids:
+        db.add(models.NotificationRead(notification_id=notification_id, user_id=current_user.id))
     db.commit()
-    return {"message": "All notifications marked as read"}
+    return {"message": "All notifications marked as read", "marked": len(unread_ids)}
+
+
+def _origin_allowed(websocket: WebSocket) -> bool:
+    """Block cross-site WebSocket hijacking: browsers always send Origin."""
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return True  # non-browser clients (tests, scripts) authenticate explicitly
+    return origin in settings.cors_origins
 
 
 async def _authenticate_websocket(websocket: WebSocket, db: Session):
-    token = websocket.query_params.get("token")
+    if not _origin_allowed(websocket):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+    # Prefer the HttpOnly session cookie; ?token= is kept for API clients.
+    token = websocket.cookies.get(SESSION_COOKIE_NAME) or websocket.query_params.get("token")
     if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return None
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if not username or payload.get("type") not in (None, "access"):
-            raise JWTError()
+        user, _ = resolve_token_user(db, token)
     except JWTError:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return None
-    user = db.query(models.User).filter(models.User.username == username).first()
-    if user is None or not user.is_active or user.role.value not in {"admin", "investigating_officer", "record_clerk"}:
+    if user.must_change_password:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return None
     return user
@@ -109,11 +142,7 @@ async def _authenticate_websocket(websocket: WebSocket, db: Session):
 
 @router.websocket("/ws")
 async def notification_websocket(websocket: WebSocket):
-    """Authenticated per-user/role notification stream.
-
-    Browser WebSocket clients pass the existing JWT as ?token=... because the
-    WebSocket API does not permit arbitrary Authorization headers.
-    """
+    """Authenticated per-user/role notification stream."""
     db = SessionLocal()
     user = None
     try:
@@ -123,7 +152,6 @@ async def notification_websocket(websocket: WebSocket):
         await notification_manager.connect(websocket, user.id, user.role.value)
         await websocket.send_json({"event": "notification.connected"})
         while True:
-            # Keep the connection alive and permit the client to send a ping/close.
             message = await websocket.receive_text()
             if message == "ping":
                 await websocket.send_json({"event": "notification.pong"})

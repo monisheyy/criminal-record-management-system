@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import hmac
 import json
+import logging
 import os
 import pickle
 import shutil
@@ -24,13 +26,17 @@ import numpy as np
 import sklearn
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+from sklearn.metrics import make_scorer, accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
 from sklearn.pipeline import Pipeline as SklearnPipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
+logger = logging.getLogger("ai_crms.ml")
+
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_DIR = BASE_DIR / "saved_models"
+# Overridable so tests and multi-instance deployments never overwrite the
+# active model artifacts of a developer's working copy.
+MODEL_DIR = Path(os.getenv("AI_CRMS_MODEL_DIR") or (BASE_DIR / "saved_models")).resolve()
 CANDIDATES_DIR = MODEL_DIR / "candidates"
 DATA_DIR = BASE_DIR / "data"
 DATASET_PATH = DATA_DIR / "demo_crime_training_v1.csv"
@@ -79,19 +85,7 @@ GANG_FEATURE_COLUMNS = [name for name in FEATURE_COLUMNS if name != "is_gang_mem
 GANG_FEATURE_INDICES = [FEATURE_COLUMNS.index(name) for name in GANG_FEATURE_COLUMNS]
 TARGET_COLUMNS = ["crime_type", "gang_label"]
 
-CRIME_TYPES = [
-    "Robbery", "Assault", "Murder", "Drug Trafficking", "Burglary",
-    "Cybercrime", "Fraud", "Kidnapping", "Arms Trafficking", "Extortion",
-    "Human Trafficking", "Car Theft", "Vandalism", "Arson", "Money Laundering",
-]
-CRIME_CATEGORIES = {
-    "Robbery": "Violent", "Assault": "Violent", "Murder": "Violent",
-    "Kidnapping": "Violent", "Drug Trafficking": "Narcotics",
-    "Arms Trafficking": "Weapons", "Human Trafficking": "Organized Crime",
-    "Fraud": "Financial", "Money Laundering": "Financial", "Extortion": "Financial",
-    "Burglary": "Property", "Car Theft": "Property", "Vandalism": "Property",
-    "Arson": "Property", "Cybercrime": "Technology",
-}
+from app.constants import CRIME_CATEGORIES, CRIME_TYPES  # noqa: E402  (single source of truth)
 GANG_NAMES = ["Shadow Syndicate", "Red Serpents", "Iron Fist", "Night Wolves", "Black Eagles"]
 EXPECTED_CRIMES = set(CRIME_TYPES)
 EXPECTED_GANGS = set(GANG_NAMES) | {"None"}
@@ -107,6 +101,164 @@ NUMERIC_RANGES = {
 
 class DatasetValidationError(ValueError):
     """Raised when the configured ML training dataset is invalid."""
+
+
+class ArtifactIntegrityError(RuntimeError):
+    """Raised when model artifacts do not match their recorded hashes/signature."""
+
+
+ARTIFACT_FILES = ("crime_classifier.pkl", "gang_predictor.pkl", "encoders.pkl")
+CALIBRATION_BINS = 10
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _signing_key() -> Optional[bytes]:
+    secret = os.getenv("SECRET_KEY")
+    return secret.encode("utf-8") if secret and len(secret) >= 32 else None
+
+
+def sign_artifact_hashes(hashes: Dict[str, str], model_version: str) -> Optional[str]:
+    key = _signing_key()
+    if key is None:
+        return None
+    message = json.dumps({"model_version": model_version, "artifacts": hashes}, sort_keys=True).encode("utf-8")
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
+def verify_artifacts(directory: Path, metadata: Dict[str, Any], *, require_signature: bool = False) -> Dict[str, Any]:
+    """Check artifact files against recorded SHA-256 hashes and HMAC signature.
+
+    Must run BEFORE unpickling: pickle files can execute arbitrary code, so an
+    artifact that was swapped or tampered with must never be loaded.
+    Returns a status dict; raises ArtifactIntegrityError on any mismatch.
+    """
+    recorded = metadata.get("artifact_sha256")
+    if not recorded:
+        if require_signature:
+            raise ArtifactIntegrityError("Model artifacts have no recorded hashes; retrain a signed candidate")
+        return {"status": "legacy_unsigned", "verified": False}
+    for name in ARTIFACT_FILES:
+        path = directory / name
+        if not path.is_file():
+            raise ArtifactIntegrityError(f"Missing model artifact: {name}")
+        if not hmac.compare_digest(_file_sha256(path), str(recorded.get(name, ""))):
+            raise ArtifactIntegrityError(f"Model artifact hash mismatch: {name}")
+    expected = sign_artifact_hashes(recorded, str(metadata.get("model_version", "")))
+    signature = metadata.get("artifact_signature")
+    if expected is None or not signature or not hmac.compare_digest(expected, signature):
+        raise ArtifactIntegrityError(
+            "Model artifact signature is invalid (tampering, or SECRET_KEY changed since training). "
+            "Retrain and activate a new candidate."
+        )
+    return {"status": "verified", "verified": True}
+
+
+def expected_calibration_error(y_true: np.ndarray, proba: np.ndarray, bins: int = CALIBRATION_BINS) -> Dict[str, Any]:
+    """Top-label ECE and multi-class Brier score on held-out data.
+
+    ECE compares the model's stated confidence with its observed accuracy. A
+    large value means the displayed "confidence" should not be read as a
+    probability.
+    """
+    y_true = np.asarray(y_true, dtype=int)
+    confidence = proba.max(axis=1)
+    predicted = proba.argmax(axis=1)
+    correct = (predicted == y_true).astype(float)
+    edges = np.linspace(0.0, 1.0, bins + 1)
+    ece = 0.0
+    table = []
+    for index, (low, high) in enumerate(zip(edges[:-1], edges[1:])):
+        mask = (confidence >= low) & (confidence <= high) if index == 0 else (confidence > low) & (confidence <= high)
+        count = int(mask.sum())
+        if count == 0:
+            continue
+        accuracy = float(correct[mask].mean())
+        mean_conf = float(confidence[mask].mean())
+        ece += (count / len(y_true)) * abs(accuracy - mean_conf)
+        table.append({"bin": [round(float(low), 2), round(float(high), 2)], "count": count,
+                      "mean_confidence": round(mean_conf, 4), "accuracy": round(accuracy, 4)})
+    one_hot = np.zeros_like(proba)
+    one_hot[np.arange(len(y_true)), y_true] = 1.0
+    brier = float(np.mean(np.sum((proba - one_hot) ** 2, axis=1)))
+    return {"expected_calibration_error": round(float(ece), 6), "brier_score": round(brier, 6),
+            "mean_confidence": round(float(confidence.mean()), 6), "reliability_table": table}
+
+
+# Evaluation slices. The bundled dataset contains no protected attributes
+# (e.g. ethnicity, religion, gender), so only operational/geographic proxies can
+# be sliced here. Real deployments must add legally permissible subgroup
+# columns to the evaluation set and extend this list (see docs/MODEL_CARD.md).
+SUBGROUP_SLICES = {
+    "age_band": ("age", [(16, 25, "16-24"), (25, 40, "25-39"), (40, 101, "40+")]),
+    "gang_membership": ("is_gang_member", [(0, 0.5, "non-member"), (0.5, 1.01, "member")]),
+    "location_risk_band": ("location_risk", [(0, 0.34, "low"), (0.34, 0.67, "medium"), (0.67, 1.01, "high")]),
+    "time_of_day": ("time_of_crime", [(6, 18, "day 06-17"), (18, 24, "evening 18-23"), (0, 6, "night 00-05")]),
+}
+MIN_SLICE_SAMPLES = 10
+
+
+def subgroup_evaluation(X_raw: np.ndarray, y_true: np.ndarray, y_pred: np.ndarray, classes: Sequence[str]) -> Dict[str, Any]:
+    """Per-slice accuracy / macro-F1 with sample sizes and the worst-case gap."""
+    labels = np.arange(len(classes))
+    overall = float(accuracy_score(y_true, y_pred)) if len(y_true) else 0.0
+    report: Dict[str, Any] = {"overall_accuracy": overall, "min_slice_samples": MIN_SLICE_SAMPLES, "slices": {}}
+    worst_gap = 0.0
+    for slice_name, (feature, bands) in SUBGROUP_SLICES.items():
+        column = X_raw[:, FEATURE_COLUMNS.index(feature)]
+        groups = []
+        for low, high, label in bands:
+            mask = np.isfinite(column) & (column >= low) & (column < high)
+            n = int(mask.sum())
+            entry: Dict[str, Any] = {"group": label, "n": n}
+            if n >= MIN_SLICE_SAMPLES:
+                acc = float(accuracy_score(y_true[mask], y_pred[mask]))
+                entry.update({
+                    "accuracy": round(acc, 4),
+                    "macro_f1": round(float(f1_score(y_true[mask], y_pred[mask], labels=labels, average="macro", zero_division=0)), 4),
+                    "accuracy_gap_vs_overall": round(acc - overall, 4),
+                })
+                worst_gap = max(worst_gap, abs(acc - overall))
+            else:
+                entry["note"] = "too few samples to evaluate reliably"
+            groups.append(entry)
+        report["slices"][slice_name] = groups
+    report["max_abs_accuracy_gap"] = round(worst_gap, 4)
+    report["limitations"] = ("Slices use operational features only; no protected-attribute fairness "
+                             "evaluation is possible with this dataset.")
+    return report
+
+
+def evaluate_quality_gate(crime_metrics: Dict[str, Any], gate: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Compare holdout metrics with release thresholds; every check is reported."""
+    if gate is None:
+        from app.config import settings
+        gate = settings.model_quality_gate.as_dict()
+    calibration = crime_metrics.get("calibration") or {}
+    ece = calibration.get("expected_calibration_error")
+    checks = [
+        ("macro_f1", crime_metrics.get("macro_f1", 0.0), ">=", gate["min_macro_f1"]),
+        ("balanced_accuracy", crime_metrics.get("balanced_accuracy", 0.0), ">=", gate["min_balanced_accuracy"]),
+        ("zero_recall_classes", len(crime_metrics.get("zero_recall_classes", [])), "<=", gate["max_zero_recall_classes"]),
+        ("test_samples", crime_metrics.get("test_samples", 0), ">=", gate["min_test_samples"]),
+        ("expected_calibration_error", ece if ece is not None else 1.0, "<=", gate["max_expected_calibration_error"]),
+    ]
+    results = []
+    for name, observed, op, threshold in checks:
+        passed = observed >= threshold if op == ">=" else observed <= threshold
+        results.append({"check": name, "observed": observed, "operator": op, "threshold": threshold, "passed": bool(passed)})
+    if gate.get("require_beats_majority_baseline", True):
+        beats = bool(crime_metrics.get("beats_majority_baseline"))
+        results.append({"check": "beats_majority_baseline", "observed": beats,
+                        "operator": "==", "threshold": True, "passed": beats})
+    return {"passed": all(item["passed"] for item in results), "checks": results, "thresholds": gate,
+            "evaluated_at": datetime.now(timezone.utc).isoformat()}
 
 
 def _utc_now() -> datetime:
@@ -237,6 +389,7 @@ class CRMSMLPipeline:
         self.model_version = "v1.0"
         self.is_trained = False
         self.training_metadata: Dict[str, Any] = {}
+        self.integrity: Dict[str, Any] = {"status": "unknown", "verified": False}
         self._load_or_train()
 
     def _transform_features(self, X: np.ndarray) -> np.ndarray:
@@ -314,6 +467,12 @@ class CRMSMLPipeline:
             y_crime_enc[crime_test_idx], crime_pred, len(crime_train_idx), len(crime_test_idx),
             self.label_encoder_crime.classes_
         )
+        crime_metrics["calibration"] = expected_calibration_error(
+            y_crime_enc[crime_test_idx], self.crime_classifier.predict_proba(X_crime_test_scaled)
+        )
+        crime_metrics["subgroup_evaluation"] = subgroup_evaluation(
+            X[crime_test_idx], y_crime_enc[crime_test_idx], crime_pred, self.label_encoder_crime.classes_
+        )
         crime_cv = self._cross_validation(
             X, y_crime_enc, self.label_encoder_crime.classes_,
             RandomForestClassifier(n_estimators=150, max_depth=10, random_state=RANDOM_SEED, class_weight="balanced")
@@ -340,6 +499,9 @@ class CRMSMLPipeline:
         gang_metrics = self._metrics(
             y_gang_enc[gang_test_idx], gang_pred, len(gang_train_idx), len(gang_test_idx),
             self.label_encoder_gang.classes_
+        )
+        gang_metrics["calibration"] = expected_calibration_error(
+            y_gang_enc[gang_test_idx], self.gang_predictor.predict_proba(X_gang_test_scaled)
         )
         gang_metrics["cross_validation"] = self._cross_validation(
             X_gang, y_gang_enc, self.label_encoder_gang.classes_,
@@ -381,7 +543,9 @@ class CRMSMLPipeline:
             "risk_score_config": RISK_SCORE_CONFIG,
             "risk_level_thresholds": {"medium": 35, "high": 55, "critical": 75},
             "risk_score_disclaimer": "Prototype decision-support score; not clinically or legally validated.",
+            "quality_gate": evaluate_quality_gate(crime_metrics),
             "sklearn_version": sklearn.__version__,
+            "numpy_version": np.__version__,
             "trained_at": trained_at,
         }
         self.is_trained = True
@@ -395,6 +559,7 @@ class CRMSMLPipeline:
             "trained_at": trained_at,
             "dataset": dataset_meta,
             "evaluation_method": self.training_metadata["evaluation_method"],
+            "quality_gate": self.training_metadata["quality_gate"],
         }
 
     @staticmethod
@@ -454,7 +619,12 @@ class CRMSMLPipeline:
         cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=RANDOM_SEED)
         scores = cross_validate(
             pipeline, X, y, cv=cv,
-            scoring={"accuracy": "accuracy", "precision": "precision_weighted", "recall": "recall_weighted", "f1": "f1_weighted"},
+            scoring={
+                "accuracy": "accuracy",
+                "precision": make_scorer(precision_score, average="weighted", zero_division=0),
+                "recall": make_scorer(recall_score, average="weighted", zero_division=0),
+                "f1": make_scorer(f1_score, average="weighted", zero_division=0),
+            },
             n_jobs=1,
         )
         return {
@@ -542,10 +712,14 @@ class CRMSMLPipeline:
                 "gang_prediction_available": gang_prediction_available,
                 "gang_prediction_warning": None if gang_prediction_available else "Gang prediction is disabled because the loaded legacy model uses a target-leaking feature. Train and independently validate a candidate before enabling this output.",
                 "model_validity_warning": (
-                    "The loaded model is trained on synthetic demonstration data and has not been validated for real-world use."
-                    if (self.training_metadata.get("dataset", {}).get("dataset_type") == "synthetic_demonstration"
-                        or self.training_metadata.get("dataset_type") == "synthetic_demonstration")
-                    else None
+                    "The loaded model is trained on synthetic demonstration data (or data of unknown provenance) "
+                    "and has not been validated for real-world use."
+                    if self.is_synthetic else None
+                ),
+                "calibration_warning": (
+                    "Confidence values are uncalibrated model scores, not probabilities. Holdout expected "
+                    "calibration error: "
+                    f"{((self.training_metadata.get('crime_classifier') or {}).get('calibration') or {}).get('expected_calibration_error', 'unknown')}."
                 ),
                 "risk_factors": risk_factors,
                 "risk_score_method": {
@@ -895,11 +1069,12 @@ class CRMSMLPipeline:
                 "feature_columns": FEATURE_COLUMNS,
                 "gang_feature_columns": GANG_FEATURE_COLUMNS,
             }, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        hashes = {name: _file_sha256(output_dir / name) for name in ARTIFACT_FILES}
+        self.training_metadata["artifact_sha256"] = hashes
+        self.training_metadata["artifact_signature"] = sign_artifact_hashes(hashes, self.model_version)
         (output_dir / "metadata.json").write_text(
             json.dumps(self.training_metadata, indent=2), encoding="utf-8"
         )
-        if output_dir.resolve() == MODEL_DIR.resolve():
-            METADATA_PATH.write_text(json.dumps(self.training_metadata, indent=2), encoding="utf-8")
 
     def save_candidate(self) -> str:
         """Persist a trained candidate without touching the active model artifacts."""
@@ -928,6 +1103,10 @@ class CRMSMLPipeline:
             raise ValueError("Candidate crime feature schema is incompatible")
         if model_feature_columns.get("gang_predictor") != GANG_FEATURE_COLUMNS:
             raise ValueError("Candidate gang feature schema is incompatible or contains a target-leaking feature")
+        try:
+            verify_artifacts(candidate_dir, candidate_metadata, require_signature=True)
+        except ArtifactIntegrityError as exc:
+            raise ValueError(str(exc)) from exc
 
         staging = MODEL_DIR / f".activation-{uuid.uuid4().hex}"
         staging.mkdir(parents=True, exist_ok=False)
@@ -959,6 +1138,17 @@ class CRMSMLPipeline:
             shutil.rmtree(staging, ignore_errors=True)
 
     def _load_or_train(self) -> None:
+        metadata: Dict[str, Any] = {}
+        if METADATA_PATH.exists():
+            try:
+                metadata = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                metadata = {}
+        if all((MODEL_DIR / name).exists() for name in ARTIFACT_FILES):
+            # Raises ArtifactIntegrityError (never silently retrains) on tampering.
+            self.integrity = verify_artifacts(MODEL_DIR, metadata)
+            if not self.integrity["verified"]:
+                logger.warning("Loading legacy UNSIGNED model artifacts from %s; retrain to sign them.", MODEL_DIR)
         try:
             with (MODEL_DIR / "crime_classifier.pkl").open("rb") as handle:
                 self.crime_classifier = pickle.load(handle)
@@ -972,8 +1162,8 @@ class CRMSMLPipeline:
             self.imputer = enc.get("imputer")
             self.gang_scaler = enc.get("gang_scaler", self.scaler)
             self.gang_imputer = enc.get("gang_imputer", self.imputer)
-            if METADATA_PATH.exists():
-                self.training_metadata = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
+            if metadata:
+                self.training_metadata = metadata
                 self.model_version = self.training_metadata.get("model_version", "v1.0")
             else:
                 self.training_metadata = {"model_version": "v1.0", "legacy_artifact": True}
@@ -981,9 +1171,20 @@ class CRMSMLPipeline:
             self.is_trained = True
         except (FileNotFoundError, EOFError, KeyError, pickle.UnpicklingError, json.JSONDecodeError):
             self.train()
+            self.integrity = {"status": "verified", "verified": True}
 
     def get_metadata(self) -> Dict[str, Any]:
         return dict(self.training_metadata)
+
+    @property
+    def dataset_type(self) -> str:
+        meta = self.training_metadata
+        return (meta.get("dataset") or {}).get("dataset_type") or meta.get("dataset_type") or "unknown"
+
+    @property
+    def is_synthetic(self) -> bool:
+        # Unknown provenance is treated as unvalidated, never as production-grade.
+        return self.dataset_type in {"synthetic_demonstration", "unknown", "external"}
 
 
 _pipeline_instance: Optional[CRMSMLPipeline] = None

@@ -1,98 +1,114 @@
-import { useState, useEffect, useCallback } from 'react';
-import { UserPlus, Edit2, Trash2, X, Shield, User, CheckCircle, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { adminAPI } from '../services/api';
+import { CheckCircle, Edit2, Lock, Trash2, Unlock, UserPlus, XCircle } from 'lucide-react';
+import { adminAPI, getErrorMessage } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
+import { ConfirmDialog, ErrorState, FieldHint, LoadingState, Modal } from '../components/ui';
+import { PASSWORD_MIN_LENGTH, ROLE_LABELS } from '../utils/constants';
+import { formatDate } from '../utils/format';
 
-const ROLES = [
-  { value: 'admin', label: 'Administrator', badge: 'badge-red' },
-  { value: 'investigating_officer', label: 'Investigating Officer', badge: 'badge-blue' },
-  { value: 'record_clerk', label: 'Record Clerk', badge: 'badge-gray' },
-];
+const ROLE_BADGE = { admin: 'badge-red', investigating_officer: 'badge-blue', record_clerk: 'badge-gray' };
+const EMPTY_FORM = { username: '', email: '', full_name: '', password: '', role: 'record_clerk', badge_number: '', department: '' };
 
-const EMPTY_FORM = {
-  username: '', email: '', full_name: '',
-  password: '', role: 'record_clerk',
-  badge_number: '', department: '',
-};
+const isLocked = (u) => u.locked_until && new Date(u.locked_until) > new Date();
 
-export default function AdminUsers() {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+function UserModal({ editing, onClose, onSaved }) {
+  const [form, setForm] = useState(editing ? {
+    username: editing.username, email: editing.email, full_name: editing.full_name, password: '', role: editing.role,
+    badge_number: editing.badge_number || '', department: editing.department || '',
+  } : EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
-  const fetchUsers = useCallback(() => {
-    setLoading(true);
-    adminAPI.users()
-      .then(r => setUsers(r.data || []))
-      .catch(() => toast.error('Failed to load user directory.'))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm(EMPTY_FORM);
-    setModalOpen(true);
-  };
-
-  const openEdit = (u) => {
-    setEditing(u);
-    setForm({
-      username: u.username,
-      email: u.email,
-      full_name: u.full_name,
-      password: '',
-      role: u.role,
-      badge_number: u.badge_number || '',
-      department: u.department || '',
-    });
-    setModalOpen(true);
-  };
-
-  const handleSubmit = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
+    setError('');
     try {
       if (editing) {
-        const payload = { ...form };
-        if (!payload.password) delete payload.password;
+        const payload = { email: form.email, full_name: form.full_name, role: form.role,
+          badge_number: form.badge_number || null, department: form.department || null };
+        if (form.password) payload.password = form.password;
         await adminAPI.updateUser(editing.id, payload);
-        toast.success('User details updated.');
+        toast.success(form.password ? 'Account updated. The user must choose a new password at next sign-in.' : 'Account updated.');
       } else {
-        await adminAPI.createUser(form);
-        toast.success('New user account created.');
+        await adminAPI.createUser({ ...form, badge_number: form.badge_number || null, department: form.department || null });
+        toast.success('Account created. The user must change the temporary password at first sign-in.');
       }
-      setModalOpen(false);
-      fetchUsers();
+      onSaved();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to save user account.');
+      setError(getErrorMessage(err, 'Could not save the account.'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (u) => {
-    if (!window.confirm(`Permanently remove user "${u.username}"?`)) return;
+  return (
+    <Modal title={editing ? `Edit ${editing.username}` : 'Create user account'} onClose={onClose} busy={saving}>
+      <form onSubmit={submit}>
+        <div className="modal-body">
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
+          <div className="form-grid">
+            <div className="form-group"><label className="form-label" htmlFor="u-username">Username *</label>
+              <input id="u-username" className="form-control" required minLength={3} maxLength={50} pattern="[A-Za-z0-9_.\-]{3,50}"
+                value={form.username} disabled={!!editing} onChange={set('username')} autoComplete="off" /></div>
+            <div className="form-group"><label className="form-label" htmlFor="u-name">Full name *</label>
+              <input id="u-name" className="form-control" required minLength={2} maxLength={100} value={form.full_name} onChange={set('full_name')} /></div>
+          </div>
+          <div className="form-group"><label className="form-label" htmlFor="u-email">Email *</label>
+            <input id="u-email" className="form-control" type="email" required value={form.email} onChange={set('email')} /></div>
+          <div className="form-grid">
+            <div className="form-group"><label className="form-label" htmlFor="u-password">{editing ? 'Reset password' : 'Temporary password *'}</label>
+              <input id="u-password" className="form-control" type="password" required={!editing} minLength={PASSWORD_MIN_LENGTH}
+                value={form.password} onChange={set('password')} autoComplete="new-password" />
+              <FieldHint>{editing ? 'Leave blank to keep. ' : ''}At least {PASSWORD_MIN_LENGTH} characters; the user must replace it at sign-in.</FieldHint></div>
+            <div className="form-group"><label className="form-label" htmlFor="u-role">Role *</label>
+              <select id="u-role" className="form-select" value={form.role} onChange={set('role')}>
+                {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              {editing && editing.role !== form.role && <FieldHint>Changing the role signs the user out everywhere.</FieldHint>}</div>
+            <div className="form-group"><label className="form-label" htmlFor="u-badge">Badge number</label>
+              <input id="u-badge" className="form-control" maxLength={20} value={form.badge_number} onChange={set('badge_number')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="u-dept">Department / unit</label>
+              <input id="u-dept" className="form-control" maxLength={100} value={form.department} onChange={set('department')} /></div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create account'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export default function AdminUsers() {
+  const { user: me } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [modal, setModal] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+
+  const fetchUsers = useCallback(() => {
+    setLoading(true);
+    setError('');
+    adminAPI.users()
+      .then((r) => setUsers(r.data || []))
+      .catch((err) => setError(getErrorMessage(err, 'Failed to load users.')))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  const update = async (u, payload, message) => {
     try {
-      await adminAPI.deleteUser(u.id);
-      toast.success('User account removed.');
+      await adminAPI.updateUser(u.id, payload);
+      toast.success(message);
       fetchUsers();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to delete user.');
-    }
-  };
-
-  const handleToggleActive = async (u) => {
-    try {
-      await adminAPI.updateUser(u.id, { is_active: !u.is_active });
-      toast.success(`User ${u.is_active ? 'deactivated' : 'activated'}.`);
-      fetchUsers();
-    } catch {
-      toast.error('Failed to change user status.');
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -100,142 +116,89 @@ export default function AdminUsers() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">User Account Directory</h1>
-          <p className="page-subtitle">{users.length} system users registered with RBAC permissions</p>
+          <h1 className="page-title">User Directory</h1>
+          <p className="page-subtitle">{users.length} accounts · role-based access control</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}>
-          <UserPlus size={15} /> Add User Account
+        <button type="button" className="btn btn-primary" onClick={() => setModal({ editing: null })}>
+          <UserPlus size={15} aria-hidden="true" /> Create account
         </button>
       </div>
 
       <div className="table-container">
-        {loading ? (
-          <div className="empty-state" style={{ padding: '40px' }}>
-            <div className="spinner" style={{ marginBottom: 12 }} />
-            <div className="empty-state-title">Loading system accounts...</div>
-          </div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>User Identity</th>
-                <th>Assigned Role</th>
-                <th>Badge / Dept</th>
-                <th>Account Status</th>
-                <th>Created Date</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(u => {
-                const roleBadge = ROLES.find(r => r.value === u.role)?.badge || 'badge-gray';
-                const roleLabel = ROLES.find(r => r.value === u.role)?.label || u.role;
-                return (
-                  <tr key={u.id}>
-                    <td>
-                      <div className="td-primary">{u.full_name}</div>
-                      <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        @{u.username} · {u.email}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${roleBadge}`}>{roleLabel}</span>
-                    </td>
-                    <td>
-                      {u.badge_number && <div className="mono" style={{ fontSize: '0.78rem' }}>#{u.badge_number}</div>}
-                      {u.department && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{u.department}</div>}
-                      {!u.badge_number && !u.department && '—'}
-                    </td>
-                    <td>
-                      {u.is_active
-                        ? <span className="badge badge-green">● Active</span>
-                        : <span className="badge badge-red">● Inactive</span>}
-                    </td>
-                    <td className="mono" style={{ fontSize: '0.78rem' }}>
-                      {new Date(u.created_at).toLocaleDateString()}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        <button className="btn btn-secondary btn-icon" onClick={() => openEdit(u)} title="Edit User">
-                          <Edit2 size={13} />
-                        </button>
-                        <button className="btn btn-secondary btn-icon" onClick={() => handleToggleActive(u)} title={u.is_active ? 'Deactivate' : 'Activate'}>
-                          {u.is_active ? <XCircle size={13} style={{ color: 'var(--status-amber)' }} /> : <CheckCircle size={13} style={{ color: 'var(--status-emerald)' }} />}
-                        </button>
-                        <button className="btn btn-danger btn-icon" onClick={() => handleDelete(u)} title="Delete Account">
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+        {loading ? <LoadingState label="Loading accounts…" />
+          : error ? <ErrorState message={error} onRetry={fetchUsers} /> : (
+            <div className="table-scroll">
+              <table>
+                <caption className="sr-only">User accounts</caption>
+                <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Badge / unit</th><th scope="col">Status</th><th scope="col">Last sign-in</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+                <tbody>
+                  {users.map((u) => {
+                    const self = u.id === me?.id;
+                    return (
+                      <tr key={u.id}>
+                        <td><div className="td-primary">{u.full_name}{self && <span className="td-sub"> (you)</span>}</div><div className="td-sub mono">@{u.username} · {u.email}</div></td>
+                        <td><span className={`badge ${ROLE_BADGE[u.role] || 'badge-gray'}`}>{ROLE_LABELS[u.role] || u.role}</span></td>
+                        <td>{u.badge_number || u.department ? <>{u.badge_number && <div className="mono">#{u.badge_number}</div>}<div className="td-sub">{u.department}</div></> : '—'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {u.is_active ? <span className="badge badge-green">Active</span> : <span className="badge badge-red">Inactive</span>}
+                            {isLocked(u) && <span className="badge badge-amber"><Lock size={10} aria-hidden="true" /> Locked</span>}
+                            {u.must_change_password && <span className="badge badge-gray">Must change password</span>}
+                          </div>
+                        </td>
+                        <td className="td-mono">{u.last_login_at ? formatDate(u.last_login_at, { withTime: true }) : 'Never'}</td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button type="button" className="btn btn-secondary btn-icon" onClick={() => setModal({ editing: u })} aria-label={`Edit ${u.username}`} title="Edit">
+                            <Edit2 size={13} aria-hidden="true" />
+                          </button>
+                          {isLocked(u) && (
+                            <button type="button" className="btn btn-secondary btn-icon" onClick={() => update(u, { unlock: true }, 'Account unlocked.')} aria-label={`Unlock ${u.username}`} title="Unlock">
+                              <Unlock size={13} aria-hidden="true" />
+                            </button>
+                          )}
+                          {!self && (
+                            <button type="button" className="btn btn-secondary btn-icon" title={u.is_active ? 'Deactivate' : 'Activate'}
+                              aria-label={`${u.is_active ? 'Deactivate' : 'Activate'} ${u.username}`}
+                              onClick={() => (u.is_active ? setConfirm({ type: 'deactivate', user: u }) : update(u, { is_active: true }, 'Account activated.'))}>
+                              {u.is_active ? <XCircle size={13} aria-hidden="true" style={{ color: 'var(--status-amber)' }} /> : <CheckCircle size={13} aria-hidden="true" style={{ color: 'var(--status-emerald)' }} />}
+                            </button>
+                          )}
+                          {!self && (
+                            <button type="button" className="btn btn-danger btn-icon" onClick={() => setConfirm({ type: 'delete', user: u })} aria-label={`Delete ${u.username}`} title="Delete">
+                              <Trash2 size={13} aria-hidden="true" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
       </div>
 
-      {modalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <span className="modal-title">{editing ? 'Edit System Account' : 'Register New System User'}</span>
-              <button className="btn btn-ghost btn-icon" onClick={() => setModalOpen(false)}><X size={16} /></button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="modal-body">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group">
-                    <label className="form-label">Username *</label>
-                    <input className="form-control" type="text" required value={form.username} disabled={!!editing} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Full Name *</label>
-                    <input className="form-control" type="text" required value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Email Address *</label>
-                  <input className="form-control" type="email" required value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group">
-                    <label className="form-label">Password {!editing && '*'}</label>
-                    <input className="form-control" type="password" required={!editing} placeholder={editing ? 'Leave blank to keep current' : ''} value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">System Role *</label>
-                    <select className="form-select" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-                      {ROLES.map(r => (
-                        <option key={r.value} value={r.value}>{r.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group">
-                    <label className="form-label">Badge Number</label>
-                    <input className="form-control" type="text" value={form.badge_number} onChange={e => setForm(f => ({ ...f, badge_number: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Department / Unit</label>
-                    <input className="form-control" type="text" value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
-                  {saving ? <><span className="spinner" /> Saving...</> : (editing ? 'Update Account' : 'Create Account')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {modal && <UserModal editing={modal.editing} onClose={() => setModal(null)} onSaved={() => { setModal(null); fetchUsers(); }} />}
+      {confirm?.type === 'deactivate' && (
+        <ConfirmDialog title={`Deactivate ${confirm.user.username}?`} confirmLabel="Deactivate" danger
+          message="The user is signed out everywhere immediately and cannot sign in until reactivated. Their records and audit history are kept."
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => { await update(confirm.user, { is_active: false }, 'Account deactivated.'); setConfirm(null); }} />
+      )}
+      {confirm?.type === 'delete' && (
+        <ConfirmDialog title={`Delete ${confirm.user.username}?`} confirmLabel="Delete permanently" danger
+          message="Accounts referenced by cases, records or audit history cannot be deleted — deactivate them instead. Only unused accounts can be removed."
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            try {
+              await adminAPI.deleteUser(confirm.user.id);
+              toast.success('Account deleted.');
+              fetchUsers();
+            } catch (err) {
+              toast.error(getErrorMessage(err));
+            }
+            setConfirm(null);
+          }} />
       )}
     </div>
   );
