@@ -38,7 +38,6 @@ Model outputs are advisory only, labelled as unverified decision support everywh
 * No multi-factor authentication yet — recommended before production use.
 * Evidence files are referenced by URL; there is no managed upload store with malware scanning.
 * A database superuser can drop the append-only triggers; HMAC verification detects edits but deletion detection relies on ID-gap review. Consider shipping audit events to a write-once external log store.
-* Google Fonts are loaded from a third-party CDN; self-host them in restricted networks.
 
 ## Reporting a vulnerability
 

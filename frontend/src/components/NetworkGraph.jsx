@@ -3,10 +3,10 @@ import { Network, ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react'
 import { getErrorMessage, intelligenceAPI } from '../services/api';
 
 const TYPE_META = {
-  criminal: { label: 'Criminal', stroke: '#ef4444' },
-  case: { label: 'Case', stroke: '#3b82f6' },
-  gang: { label: 'Gang', stroke: '#a855f7' },
-  officer: { label: 'Officer', stroke: '#22c55e' },
+  criminal: { label: 'Criminal', stroke: '#FF3B30' },
+  case: { label: 'Case', stroke: '#0071E3' },
+  gang: { label: 'Gang', stroke: '#AF52DE' },
+  officer: { label: 'Officer', stroke: '#34C759' },
 };
 
 const EDGE_META = {
@@ -109,7 +109,7 @@ export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, he
       ) : graph.nodes.length === 0 ? (
         <div className="empty-state" style={{ minHeight: 280 }}><Network size={30} style={{ opacity: 0.3 }} /><div className="empty-state-title">No accessible relationships found</div></div>
       ) : (
-        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 8, overflow: 'hidden', background: 'radial-gradient(ellipse at 50% 35%, #1b2450 0%, #0d1330 55%, #080c1f 100%)' }}>
+        <div style={{ borderRadius: 14, overflow: 'hidden', background: '#F5F5F7' }}>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             width="100%"
@@ -125,16 +125,16 @@ export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, he
               {graph.edges.map(edge => {
                 const a = positions[edge.source]; const b = positions[edge.target];
                 if (!a || !b) return null;
-                return <line key={edge.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(165,180,252,.28)" strokeWidth="1.25" />;
+                return <line key={edge.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(0,0,0,.12)" strokeWidth="1" />;
               })}
               {graph.nodes.map(node => {
                 const p = positions[node.id]; const meta = TYPE_META[node.type] || TYPE_META.case;
                 const isSelected = node.id === selected;
                 return (
                   <g key={node.id} transform={`translate(${p.x},${p.y})`} onClick={(e) => { e.stopPropagation(); setSelected(node.id); }} style={{ cursor: 'pointer' }}>
-                    <circle r={isSelected ? 18 : 14} fill="#0f1533" stroke={meta.stroke} strokeWidth={isSelected ? 3 : 2} />
+                    <circle r={isSelected ? 18 : 14} fill="#FFFFFF" stroke={meta.stroke} strokeWidth={isSelected ? 3 : 2} />
                     <text textAnchor="middle" dy="4" fontSize="9" fill={meta.stroke} fontWeight="700">{node.type === 'criminal' ? 'C' : node.type === 'case' ? 'K' : node.type === 'gang' ? 'G' : 'O'}</text>
-                    <text textAnchor="middle" dy="31" fontSize="10" fill="#CBD5F5" style={{ paintOrder: 'stroke', stroke: '#080c1f', strokeWidth: 3 }}>{node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label}</text>
+                    <text textAnchor="middle" dy="31" fontSize="10" fill="#424245" style={{ paintOrder: 'stroke', stroke: '#F5F5F7', strokeWidth: 4 }}>{node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label}</text>
                   </g>
                 );
               })}
