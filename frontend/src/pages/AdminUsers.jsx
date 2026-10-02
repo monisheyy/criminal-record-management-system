@@ -146,7 +146,7 @@ export default function AdminUsers() {
                             {u.must_change_password && <span className="badge badge-gray">Must change password</span>}
                           </div>
                         </td>
-                        <td className="td-mono">{u.last_login_at ? formatDate(u.last_login_at, { withTime: true }) : 'Never'}</td>
+                        <td className="td-date">{u.last_login_at ? formatDate(u.last_login_at, { withTime: true }) : 'Never'}</td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                           <button type="button" className="btn btn-secondary btn-icon" onClick={() => setModal({ editing: u })} aria-label={`Edit ${u.username}`} title="Edit">
                             <Edit2 size={13} aria-hidden="true" />

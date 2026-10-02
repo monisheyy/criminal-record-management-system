@@ -247,7 +247,7 @@ export default function AdminAIModels() {
                         <td>{humanize(meta.dataset_type || 'unknown')}</td>
                         <td className="num mono">{formatScore(meta.crime_classifier?.macro_f1)}</td>
                         <td>{gate ? (gate.passed ? <span className="badge badge-green">Passed</span> : <span className="badge badge-red">Failed</span>) : '—'}</td>
-                        <td className="td-mono">{formatDate(m.trained_at, { withTime: true })}</td>
+                        <td className="td-date">{formatDate(m.trained_at, { withTime: true })}</td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedId(m.id)}>Details</button>
                           {lifecycle === 'awaiting_review' && (
