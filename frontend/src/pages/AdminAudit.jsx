@@ -101,7 +101,7 @@ export default function AdminAudit() {
                     <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32 }} className="td-sub">No entries match the filters.</td></tr>
                   ) : list.rows.map((log) => (
                     <tr key={log.id}>
-                      <td className="td-mono">{formatDate(log.created_at, { withTime: true })}</td>
+                      <td className="td-date">{formatDate(log.created_at, { withTime: true })}</td>
                       <td><div className="td-primary">{log.username || 'system'}</div><div className="td-sub">{log.role || '—'}{log.ip_address ? ` · ${log.ip_address}` : ''}</div></td>
                       <td><span className={`badge ${ACTION_BADGE(log.action)}`}>{log.action}</span></td>
                       <td>{log.resource_type || '—'}{log.resource_id != null ? ` #${log.resource_id}` : ''}</td>

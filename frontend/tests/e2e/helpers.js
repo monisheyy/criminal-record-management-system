@@ -25,7 +25,7 @@ export async function signIn(page, username) {
     changed.add(username);
   }
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole('heading', { name: 'Command Center' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
 }
 
 export async function signOut(page) {

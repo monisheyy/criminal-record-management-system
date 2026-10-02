@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { AlertTriangle, KeyRound, Lock, Shield, User } from 'lucide-react';
+import { AlertTriangle, BrainCircuit, FileLock2, KeyRound, Lock, ScrollText, Shield, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getErrorMessage } from '../services/api';
 
@@ -44,12 +44,35 @@ export default function Login() {
   };
 
   return (
-    <main className="auth-page">
-      <div className="auth-card">
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div className="auth-logo" aria-hidden="true"><Shield size={20} /></div>
-          <h1 className="auth-title">AI-CRMS</h1>
-          <p className="auth-subtitle">Criminal Records Management System</p>
+    <main className="login-shell">
+      <section className="login-brand" aria-label="About AI-CRMS">
+        <div className="login-logo">
+          <span className="login-logo-mark" aria-hidden="true"><Shield size={20} /></span>
+          AI-CRMS
+        </div>
+        <div>
+          <h2 className="login-headline">Case intelligence with <span>accountability built in.</span></h2>
+          <p className="login-lede">
+            One secure workspace for offender records, FIR case files, evidence custody and human-reviewed
+            AI decision support.
+          </p>
+          <ul className="login-features">
+            <li><span className="login-feature-icon" aria-hidden="true"><FileLock2 size={16} /></span>
+              <span><strong>Role- and case-level access</strong>Officers see their own investigations; every export is audited.</span></li>
+            <li><span className="login-feature-icon" aria-hidden="true"><ScrollText size={16} /></span>
+              <span><strong>Tamper-evident audit trail</strong>Append-only, signed entries you can verify at any time.</span></li>
+            <li><span className="login-feature-icon" aria-hidden="true"><BrainCircuit size={16} /></span>
+              <span><strong>AI that stays advisory</strong>Every model output needs a reasoned human review.</span></li>
+          </ul>
+        </div>
+        <p className="login-foot">Restricted system · Unauthorised access is prohibited and monitored.</p>
+      </section>
+
+      <div className="login-panel">
+      <div className="login-card">
+        <div style={{ marginBottom: 26 }}>
+          <h1 className="auth-title">Welcome back</h1>
+          <p className="auth-subtitle">Sign in to the Criminal Records Management System.</p>
         </div>
 
         {SHOW_DEMO_LOGIN && (
@@ -104,6 +127,7 @@ export default function Login() {
         </div>
 
         <p className="auth-footer">Authorized personnel only. All activity is audited.</p>
+      </div>
       </div>
     </main>
   );

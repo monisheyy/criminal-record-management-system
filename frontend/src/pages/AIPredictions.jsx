@@ -191,7 +191,7 @@ export default function AIPredictions() {
                       <td className="td-primary">{p.predicted_crime_type || '—'}</td>
                       <td className="td-mono">{formatScore(p.crime_type_confidence)}</td>
                       <td><RiskBadge score={p.risk_score} level={p.risk_level} showBar /></td>
-                      <td className="td-mono">{formatDate(p.created_at)}</td>
+                      <td className="td-date">{formatDate(p.created_at)}</td>
                       <td><StatusBadge status={p.review_status} /></td>
                       <td style={{ textAlign: 'right' }}>
                         <button type="button" className={`btn btn-sm ${p.review_status === 'pending' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSelected(p)}>

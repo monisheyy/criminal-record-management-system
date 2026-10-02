@@ -9,6 +9,7 @@ import { formatDate, todayInputValue } from '../utils/format';
 import { EmptyState, ErrorState, FieldError, LoadingState, Modal, Pagination } from '../components/ui';
 
 const PAGE_SIZE = 25;
+const AVATAR_TONES = ['indigo', 'violet', 'sky', 'emerald', 'amber', 'rose'];
 const EMPTY_FORM = {
   first_name: '', last_name: '', alias: '', date_of_birth: '', gender: '', nationality: '',
   crime_type: '', prior_convictions: 0, threat_level: 'low', is_wanted: false, is_incarcerated: false,
@@ -286,11 +287,18 @@ export default function Criminals() {
                   {rows.map((c) => (
                     <tr key={c.id}>
                       <td className="td-mono">{c.crn}</td>
-                      <td className="td-primary">{c.first_name} {c.last_name}{c.alias && <div className="td-sub">aka {c.alias}</div>}</td>
+                      <td>
+                        <div className="person-cell">
+                          <span className={`person-avatar tone-${AVATAR_TONES[c.id % AVATAR_TONES.length]}`} aria-hidden="true">
+                            {`${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase()}
+                          </span>
+                          <div><div className="td-primary">{c.first_name} {c.last_name}</div>{c.alias && <div className="td-sub">aka {c.alias}</div>}</div>
+                        </div>
+                      </td>
                       <td>{c.crime_type || 'Not classified'}</td>
                       <td><span className={`badge risk-${c.threat_level || 'low'}`}>{c.threat_level || 'low'}</span></td>
                       <td><StatusPill criminal={c} /></td>
-                      <td className="td-mono">{formatDate(c.created_at)}</td>
+                      <td className="td-date">{formatDate(c.created_at)}</td>
                       <td style={{ textAlign: 'right' }}>
                         <Link to={`/criminals/${c.id}`} className="btn btn-secondary btn-sm" aria-label={`Open record for ${c.first_name} ${c.last_name}`}>
                           <Eye size={12} aria-hidden="true" /> Open

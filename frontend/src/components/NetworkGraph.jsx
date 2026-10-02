@@ -109,7 +109,7 @@ export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, he
       ) : graph.nodes.length === 0 ? (
         <div className="empty-state" style={{ minHeight: 280 }}><Network size={30} style={{ opacity: 0.3 }} /><div className="empty-state-title">No accessible relationships found</div></div>
       ) : (
-        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 8, overflow: 'hidden', background: 'var(--bg-secondary, #0b1020)' }}>
+        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 8, overflow: 'hidden', background: 'radial-gradient(ellipse at 50% 35%, #1b2450 0%, #0d1330 55%, #080c1f 100%)' }}>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             width="100%"
@@ -125,16 +125,16 @@ export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, he
               {graph.edges.map(edge => {
                 const a = positions[edge.source]; const b = positions[edge.target];
                 if (!a || !b) return null;
-                return <line key={edge.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(148,163,184,.35)" strokeWidth="1.5" />;
+                return <line key={edge.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(165,180,252,.28)" strokeWidth="1.25" />;
               })}
               {graph.nodes.map(node => {
                 const p = positions[node.id]; const meta = TYPE_META[node.type] || TYPE_META.case;
                 const isSelected = node.id === selected;
                 return (
                   <g key={node.id} transform={`translate(${p.x},${p.y})`} onClick={(e) => { e.stopPropagation(); setSelected(node.id); }} style={{ cursor: 'pointer' }}>
-                    <circle r={isSelected ? 18 : 14} fill="var(--bg-primary, #111827)" stroke={meta.stroke} strokeWidth={isSelected ? 3 : 2} />
+                    <circle r={isSelected ? 18 : 14} fill="#0f1533" stroke={meta.stroke} strokeWidth={isSelected ? 3 : 2} />
                     <text textAnchor="middle" dy="4" fontSize="9" fill={meta.stroke} fontWeight="700">{node.type === 'criminal' ? 'C' : node.type === 'case' ? 'K' : node.type === 'gang' ? 'G' : 'O'}</text>
-                    <text textAnchor="middle" dy="31" fontSize="10" fill="var(--text-primary, #fff)">{node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label}</text>
+                    <text textAnchor="middle" dy="31" fontSize="10" fill="#CBD5F5" style={{ paintOrder: 'stroke', stroke: '#080c1f', strokeWidth: 3 }}>{node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label}</text>
                   </g>
                 );
               })}

@@ -241,7 +241,7 @@ export default function Cases() {
                       <td className="td-mono">{c.case_number}</td>
                       <td className="td-primary">{c.title}</td>
                       <td>{c.crime_type || 'Unclassified'}</td>
-                      <td className="td-mono">{formatDate(c.incident_date)}</td>
+                      <td className="td-date">{formatDate(c.incident_date)}</td>
                       <td>{c.assigned_officer?.full_name || <span className="td-sub">Unassigned</span>}</td>
                       <td><PriorityBadge priority={c.priority} /></td>
                       <td><StatusBadge status={c.status} /></td>
