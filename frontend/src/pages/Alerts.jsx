@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { notificationsAPI } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
+import { getErrorMessage, notificationsAPI } from '../services/api';
+import { ErrorState, LoadingState } from '../components/ui';
+import { formatDate } from '../utils/format';
 import toast from 'react-hot-toast';
 import { Bell, AlertTriangle, Info, CheckCircle, Siren, User, FileText, CheckCheck } from 'lucide-react';
 
@@ -16,16 +17,17 @@ const cfg = (type) => TYPE_CONFIG[type] || TYPE_CONFIG.info;
 
 export default function Alerts() {
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const fetchAlerts = useCallback(() => {
     setLoading(true);
-    notificationsAPI.list()
+    setError('');
+    notificationsAPI.list({ limit: 100 })
       .then(r => setAlerts(r.data || []))
-      .catch(() => toast.error('Failed to load system alerts.'))
+      .catch((err) => setError(getErrorMessage(err, 'Failed to load alerts.')))
       .finally(() => setLoading(false));
   }, []);
 
@@ -35,8 +37,8 @@ export default function Alerts() {
     try {
       await notificationsAPI.markRead(id);
       setAlerts(prev => prev.map(a => a.id === id ? { ...a, is_read: true } : a));
-    } catch {
-      toast.error('Failed to mark alert as read.');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to mark the alert as read.'));
     }
   };
 
@@ -45,8 +47,8 @@ export default function Alerts() {
       await notificationsAPI.markAllRead();
       setAlerts(prev => prev.map(a => ({ ...a, is_read: true })));
       toast.success('All system alerts marked as read.');
-    } catch {
-      toast.error('Failed to mark alerts as read.');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to mark alerts as read.'));
     }
   };
 
@@ -72,12 +74,9 @@ export default function Alerts() {
         </button>
       </div>
 
-      {loading ? (
-        <div className="empty-state" style={{ padding: '40px' }}>
-          <div className="spinner" style={{ marginBottom: 12 }} />
-          <div className="empty-state-title">Loading system notifications...</div>
-        </div>
-      ) : alerts.length === 0 ? (
+      {loading ? <LoadingState label="Loading alerts…" />
+        : error ? <ErrorState message={error} onRetry={fetchAlerts} />
+        : alerts.length === 0 ? (
         <div className="empty-state">
           <Bell size={32} style={{ opacity: 0.3 }} />
           <div className="empty-state-title">No Active Alerts</div>
@@ -103,11 +102,11 @@ export default function Alerts() {
                   borderColor: alert.is_read ? 'var(--border)' : 'var(--border-strong)',
                 }}
               >
-                <div style={{ color, flexShrink: 0, marginTop: 2 }}>{icon}</div>
+                <div style={{ color, flexShrink: 0, marginTop: 2 }} aria-hidden="true">{icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                      {alert.title}
+                      {!alert.is_read && <span className="sr-only">Unread: </span>}{alert.title}
                     </span>
                     <span className={`badge ${badgeClass}`}>{alert.notification_type}</span>
                   </div>
@@ -116,7 +115,7 @@ export default function Alerts() {
                   </div>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      {new Date(alert.created_at).toLocaleString()}
+                      {formatDate(alert.created_at, { withTime: true })}
                     </span>
                     {alert.related_criminal_id && (
                       <button

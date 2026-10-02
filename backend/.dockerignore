@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+*.db
+*.sqlite*
+.env
+.env.*
+backups/
+tests/
+app/ml/saved_models/*
+!app/ml/saved_models/.gitkeep

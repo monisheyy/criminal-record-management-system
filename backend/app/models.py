@@ -4,8 +4,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from datetime import datetime, timezone
 import enum
 from app.database import Base
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class UserRole(str, enum.Enum):
@@ -40,12 +45,31 @@ class User(Base):
     badge_number = Column(String(20), nullable=True)
     department = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
+    # Account security state
+    must_change_password = Column(Boolean, nullable=False, default=False, server_default="0")
+    failed_login_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    locked_until = Column(DateTime(timezone=True), nullable=True)
+    # Incremented whenever all existing sessions must be invalidated
+    # (password change/reset, deactivation, role change).
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     cases_assigned = relationship("Case", back_populates="assigned_officer", foreign_keys="Case.assigned_officer_id")
     audit_logs = relationship("AuditLog", back_populates="user")
     ai_reviews = relationship("AIPrediction", back_populates="reviewed_by_officer")
+
+
+class RevokedToken(Base):
+    """Denylist of individually revoked access tokens (e.g. on logout)."""
+    __tablename__ = "revoked_tokens"
+
+    jti = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
 class PasswordRecovery(Base):
@@ -213,6 +237,10 @@ class Evidence(Base):
     chain_of_custody = Column(Text, nullable=True)
     status = Column(String(30), default="collected")
     file_url = Column(String(500), nullable=True)
+    # SHA-256 of the referenced evidence file, recorded at collection time so
+    # later copies can be verified against the original.
+    file_sha256 = Column(String(64), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     case = relationship("Case", back_populates="evidence")
@@ -276,6 +304,33 @@ class AIPrediction(Base):
     criminal = relationship("Criminal", back_populates="ai_predictions")
     case = relationship("Case", back_populates="ai_predictions")
     reviewed_by_officer = relationship("User", back_populates="ai_reviews")
+    reviews = relationship(
+        "AIPredictionReview", back_populates="prediction",
+        cascade="all, delete-orphan", order_by="AIPredictionReview.id",
+    )
+
+
+class AIPredictionReview(Base):
+    """Append-only history of human decisions on an AI prediction.
+
+    Every confirm/reject/override (and every later correction) is kept, with
+    the reviewer and their stated reason, so decisions can be contested and
+    audited. The latest row mirrors the summary fields on ``AIPrediction``.
+    """
+    __tablename__ = "ai_prediction_reviews"
+    __table_args__ = (Index("ix_ai_prediction_reviews_prediction", "prediction_id", "id"),)
+
+    id = Column(Integer, primary_key=True)
+    prediction_id = Column(Integer, ForeignKey("ai_predictions.id"), nullable=False)
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewer_username = Column(String(50), nullable=True)
+    previous_status = Column(String(20), nullable=True)
+    decision = Column(String(20), nullable=False)
+    remarks = Column(Text, nullable=False)
+    override_crime_type = Column(String(100), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    prediction = relationship("AIPrediction", back_populates="reviews")
 
 
 class Notification(Base):
@@ -291,7 +346,21 @@ class Notification(Base):
     target_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     related_criminal_id = Column(Integer, ForeignKey("criminals.id"), nullable=True)
     related_case_id = Column(Integer, ForeignKey("cases.id"), nullable=True)
+    # Prevents the same alert being raised repeatedly for one underlying event.
+    dedup_key = Column(String(120), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class NotificationRead(Base):
+    """Per-user read receipt. Role/broadcast notifications are shared rows, so
+    read state must be tracked per recipient rather than on the notification."""
+    __tablename__ = "notification_reads"
+    __table_args__ = (UniqueConstraint("notification_id", "user_id", name="uq_notification_read"),)
+
+    id = Column(Integer, primary_key=True)
+    notification_id = Column(Integer, ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    read_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
 class AuditLog(Base):
@@ -309,7 +378,12 @@ class AuditLog(Base):
     status = Column(String(20), nullable=False, default="success")
     reason = Column(Text, nullable=True)
     ip_address = Column(String(45), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Correlates the audit event with application logs for the same request.
+    request_id = Column(String(64), nullable=True, index=True)
+    # HMAC-SHA256 over the canonical entry content (keyed with SECRET_KEY) so
+    # any later modification of a stored row is detectable.
+    entry_hash = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now())
 
     user = relationship("User", back_populates="audit_logs")
 
@@ -332,6 +406,8 @@ class MLModel(Base):
     trained_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True)
     notes = Column(Text, nullable=True)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    activated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 
 class SystemSetting(Base):

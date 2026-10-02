@@ -1,12 +1,12 @@
 from sqlalchemy import create_engine, event
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-import os
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+from app.config import settings
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./acrms.db")
+DATABASE_URL = settings.database_url
 
-engine_kwargs = {}
+engine_kwargs = {"pool_pre_ping": True}
 
 if "sqlite" in DATABASE_URL:
     engine_kwargs["connect_args"] = {"check_same_thread": False}

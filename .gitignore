@@ -1,46 +1,52 @@
-# Environment secrets
+# ── Secrets ─────────────────────────────────────────────────────────────────
+# Real configuration never enters version control; .env.example is the template.
 .env
 .env.*
 !.env.example
+*.pem
+*.key
 
-# Python
+# ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.coverage
+htmlcov/
 .venv/
 venv/
 
-# Frontend
+# ── Frontend ────────────────────────────────────────────────────────────────
 node_modules/
 dist/
+frontend/test-results/
+frontend/playwright-report/
 
-# Local databases
+# ── Local data (databases, backups, generated model artifacts) ──────────────
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
+backups/
+backend/app/ml/saved_models/*
+!backend/app/ml/saved_models/.gitkeep
 
-# OS
+# ── Agent / editor worktrees and caches ─────────────────────────────────────
+.kilo/
+.kilocode/
+.vscode/
+.idea/
+*.swp
+
+# ── OS ──────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Generated test and build output
-
+# ── Generated test, build and release output ────────────────────────────────
+release/
 frontend_build.log
 frontend_build.exit
 frontend_test_results.txt
 evaluation_stdout.json
 ml_evaluation_report.json
-
-# Environment secrets
-
-.env
-backend/.env
-
-# Python and frontend dependencies
-
-**pycache**/
-*.py[cod]
-.venv/
-venv/
-node_modules/
-

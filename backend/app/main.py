@@ -1,139 +1,130 @@
-from dotenv import load_dotenv
-load_dotenv()  # Must be first — loads .env before any os.getenv() call
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import os
+import logging
 
-from app.database import engine, Base
-from sqlalchemy import inspect, text
-from app import models
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, OperationalError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.routers import auth, criminals, cases, ai_predictions, admin, gangs, notifications, intelligence
+from app.config import settings
+from app.observability import RequestContextMiddleware, configure_logging, current_request_id
 
+configure_logging(settings.log_level, settings.log_json)
+logger = logging.getLogger("ai_crms")
 
-def ensure_ml_evaluation_columns():
-    """Backward-compatible SQLite schema upgrade for ML evaluation metadata."""
-    inspector = inspect(engine)
-    if "ml_models" not in inspector.get_table_names():
-        return
-    existing = {col["name"] for col in inspector.get_columns("ml_models")}
-    additions = {
-        "evaluation_metadata": "JSON",
-        "dataset_version": "VARCHAR(50)",
-        "evaluation_method": "VARCHAR(120)",
-    }
-    with engine.begin() as conn:
-        for name, sql_type in additions.items():
-            if name not in existing:
-                conn.execute(text(f"ALTER TABLE ml_models ADD COLUMN {name} {sql_type}"))
+from app.database import SessionLocal, engine  # noqa: E402  (logging must be configured first)
+from app.db_bootstrap import current_revision, head_revision, migrate_database  # noqa: E402
+from app import models  # noqa: E402
+from app.routers import (  # noqa: E402
+    admin, ai_predictions, auth, cases, criminals, gangs, intelligence, notifications,
+)
 
+APP_VERSION = "1.1.0"
 
-def ensure_password_recovery_columns():
-    """Create/upgrade password recovery storage without deleting existing data."""
-    inspector = inspect(engine)
-    if "password_recovery" not in inspector.get_table_names():
-        return
-    existing = {col["name"] for col in inspector.get_columns("password_recovery")}
-    additions = {"reset_consumed_at": "DATETIME"}
-    with engine.begin() as conn:
-        for name, sql_type in additions.items():
-            if name not in existing:
-                conn.execute(text(f"ALTER TABLE password_recovery ADD COLUMN {name} {sql_type}"))
+# Published demo credentials (see seed_data.py). They must never work in production.
+KNOWN_DEMO_CREDENTIALS = {
+    "admin": "admin123", "officer1": "officer123", "officer2": "officer123",
+    "officer3": "officer123", "clerk1": "clerk123", "clerk2": "clerk123",
+}
 
 
-def ensure_audit_columns():
-    """Backward-compatible SQLite schema upgrade for structured audit fields."""
-    inspector = inspect(engine)
-    if "audit_logs" not in inspector.get_table_names():
-        return
-    existing = {col["name"] for col in inspector.get_columns("audit_logs")}
-    additions = {"role": "VARCHAR(30)", "status": "VARCHAR(20) DEFAULT 'success'", "reason": "TEXT"}
-    with engine.begin() as conn:
-        for name, sql_type in additions.items():
-            if name not in existing:
-                conn.execute(text(f"ALTER TABLE audit_logs ADD COLUMN {name} {sql_type}"))
+def disable_known_demo_credentials(db) -> int:
+    """Deactivate any account still using a published demo password."""
+    from app.security import invalidate_all_sessions, verify_password
+    from app.utils.audit import create_audit_log
 
-
-def ensure_integrity_indexes():
-    """Add non-destructive integrity/lookup indexes to existing databases.
-
-    Unique indexes are created only when the existing data has no duplicates.
-    We fail startup rather than silently weakening an integrity guarantee if
-    legacy data violates the proposed constraint.
-    """
-    inspector = inspect(engine)
-    tables = set(inspector.get_table_names())
-    if not {"case_criminals", "evidence", "cases"}.issubset(tables):
-        return
-
-    checks = [
-        (
-            "uq_case_criminal",
-            "SELECT case_id, criminal_id, COUNT(*) AS n FROM case_criminals GROUP BY case_id, criminal_id HAVING COUNT(*) > 1",
-            "CREATE UNIQUE INDEX uq_case_criminal ON case_criminals(case_id, criminal_id)",
-        ),
-        (
-            "uq_case_evidence_number",
-            "SELECT case_id, evidence_number, COUNT(*) AS n FROM evidence GROUP BY case_id, evidence_number HAVING COUNT(*) > 1",
-            "CREATE UNIQUE INDEX uq_case_evidence_number ON evidence(case_id, evidence_number)",
-        ),
-        (
-            "uq_cases_fir_number",
-            "SELECT fir_number, COUNT(*) AS n FROM cases WHERE fir_number IS NOT NULL GROUP BY fir_number HAVING COUNT(*) > 1",
-            "CREATE UNIQUE INDEX uq_cases_fir_number ON cases(fir_number)",
-        ),
-    ]
-    existing_indexes = {i["name"] for table in tables for i in inspect(engine).get_indexes(table)}
-    with engine.begin() as conn:
-        for name, duplicate_sql, create_sql in checks:
-            if name in existing_indexes:
-                continue
-            duplicate = conn.execute(text(duplicate_sql)).first()
-            if duplicate:
-                raise RuntimeError(
-                    f"Database integrity migration blocked: duplicate data violates {name}: {tuple(duplicate)}"
-                )
-            conn.execute(text(create_sql))
+    disabled = 0
+    for username, password in KNOWN_DEMO_CREDENTIALS.items():
+        user = db.query(models.User).filter(models.User.username == username, models.User.is_active.is_(True)).first()
+        if user and verify_password(password, user.hashed_password):
+            user.is_active = False
+            invalidate_all_sessions(user)
+            create_audit_log(db, "DEMO_ACCOUNT_DISABLED", user_id=user.id, username=user.username, role=user.role,
+                             resource_type="user", resource_id=user.id, status="success",
+                             reason="Published demo credential detected at production start-up", commit=False)
+            disabled += 1
+    if disabled:
+        db.commit()
+        logger.warning("Disabled %d account(s) still using published demo passwords", disabled)
+    return disabled
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create all tables and upgrade older SQLite schemas without deleting data.
-    Base.metadata.create_all(bind=engine)
-    ensure_ml_evaluation_columns()
-    ensure_audit_columns()
-    ensure_password_recovery_columns()
-    ensure_integrity_indexes()
-    # Auto-seed if empty
-    from app.database import SessionLocal
+    # Schema: auto-migrate in development/test; verify-only in production.
+    migrate_database(engine, allow_auto_upgrade=not settings.is_production)
     db = SessionLocal()
     try:
-        if db.query(models.User).count() == 0:
+        if settings.is_production:
+            disable_known_demo_credentials(db)
+        elif settings.seed_demo_data and db.query(models.User).count() == 0:
             from seed_data import seed_database
             seed_database(db)
     finally:
         db.close()
+    logger.info("AI-CRMS %s started (env=%s)", APP_VERSION, settings.app_env)
     yield
 
 
 app = FastAPI(
     title="AI-CRMS API",
     description="Artificial Intelligence Criminal Records Management System",
-    version="1.0.0",
-    lifespan=lifespan
+    version=APP_VERSION,
+    lifespan=lifespan,
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
 )
 
-cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173").split(",") if origin.strip()]
-
+# Middleware order: the last added runs first (outermost).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-Request-ID"],
+    expose_headers=["X-Total-Count", "X-Unread-Count", "X-Request-ID", "Content-Disposition"],
 )
+app.add_middleware(RequestContextMiddleware, hsts=settings.is_production)
+if settings.trusted_hosts and "*" not in settings.trusted_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
+
+
+# ── Consistent, safe error contracts ──────────────────────────────────────────
+def _error(status_code: int, detail, headers=None) -> JSONResponse:
+    response = JSONResponse(status_code=status_code, content={"detail": detail, "request_id": current_request_id()})
+    for key, value in (headers or {}).items():
+        response.headers[key] = value
+    return response
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    logger.warning("Integrity error on %s %s: %s", request.method, request.url.path, exc.orig.__class__.__name__)
+    return _error(409, "The request conflicts with existing data (duplicate value or a record that is still referenced).")
+
+
+@app.exception_handler(PermissionError)
+async def permission_error_handler(request: Request, exc: PermissionError):
+    logger.warning("Blocked write on %s %s: %s", request.method, request.url.path, exc)
+    return _error(409, "This record is append-only and cannot be modified or deleted.")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    # Echo field locations/messages but never the submitted values (may contain PII).
+    errors = [{"loc": list(err.get("loc", [])), "msg": err.get("msg"), "type": err.get("type")} for err in exc.errors()]
+    return _error(422, errors)
+
+
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return _error(500, "Internal server error. Quote the request ID when reporting this problem.")
+
 
 # Routers
 app.include_router(auth.router)
@@ -141,11 +132,33 @@ app.include_router(criminals.router)
 app.include_router(cases.router)
 app.include_router(ai_predictions.router)
 app.include_router(admin.router)
+app.include_router(admin.directory_router)
 app.include_router(gangs.router)
 app.include_router(notifications.router)
 app.include_router(intelligence.router)
 
 
-@app.get("/api/health")
+@app.get("/api/health", tags=["health"])
 async def health():
-    return {"status": "ok", "service": "AI-CRMS", "version": "1.0.0"}
+    """Liveness: the process is up and serving requests."""
+    return {"status": "ok", "service": "AI-CRMS", "version": APP_VERSION}
+
+
+@app.get("/api/health/ready", tags=["health"])
+async def readiness():
+    """Readiness: database reachable and schema at the expected revision."""
+    checks = {}
+    healthy = True
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+            revision = current_revision(connection)
+        expected = head_revision()
+        checks["database"] = "ok"
+        checks["schema"] = "ok" if revision == expected else f"revision {revision} != {expected}"
+        healthy = revision == expected
+    except OperationalError:
+        checks["database"] = "unreachable"
+        healthy = False
+    return JSONResponse(status_code=200 if healthy else 503,
+                        content={"status": "ready" if healthy else "not_ready", "checks": checks})

@@ -1,265 +1,315 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Search, Plus, AlertTriangle, Eye, X, Shield } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { criminalsAPI } from '../services/api';
-import { RiskBadge, StatusBadge } from '../components/RiskBadge';
+import { AlertTriangle, Eye, Plus, Search, Shield } from 'lucide-react';
+import { criminalsAPI, getErrorMessage, totalCount } from '../services/api';
+import { getFieldErrors } from '../utils/errors';
+import { CRIME_TYPES, GENDERS, THREAT_LEVELS } from '../utils/constants';
+import { formatDate, todayInputValue } from '../utils/format';
+import { EmptyState, ErrorState, FieldError, LoadingState, Modal, Pagination } from '../components/ui';
 
-const Criminals = () => {
-  const navigate = useNavigate();
-  const [criminals, setCriminals] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState(false);
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    dob: '',
-    gender: '',
-    crimeType: '',
-    crn: ''
-  });
+const PAGE_SIZE = 25;
+const EMPTY_FORM = {
+  first_name: '', last_name: '', alias: '', date_of_birth: '', gender: '', nationality: '',
+  crime_type: '', prior_convictions: 0, threat_level: 'low', is_wanted: false, is_incarcerated: false,
+};
 
+function useDebounced(value, delay = 350) {
+  const [debounced, setDebounced] = useState(value);
   useEffect(() => {
-    fetchCriminals();
-  }, []);
-
-  const fetchCriminals = async () => {
-    setLoading(true);
-    try {
-      const response = criminalsAPI.getAll ? await criminalsAPI.getAll() : await criminalsAPI.list();
-      setCriminals(response.data || []);
-    } catch (error) {
-      toast.error('Failed to fetch criminal records');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    const checkDup = async () => {
-      if (formData.firstName.length >= 2 && formData.lastName.length >= 2) {
-        try {
-          const response = await criminalsAPI.checkDuplicate({ 
-            firstName: formData.firstName, 
-            lastName: formData.lastName 
-          });
-          if (response.data && response.data.matchFound) {
-            setDuplicateWarning(true);
-          } else {
-            setDuplicateWarning(false);
-          }
-        } catch (error) {
-          console.error("Duplicate check failed", error);
-        }
-      } else {
-        setDuplicateWarning(false);
-      }
-    };
-    
-    const timer = setTimeout(checkDup, 400);
+    const timer = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(timer);
-  }, [formData.firstName, formData.lastName]);
+  }, [value, delay]);
+  return debounced;
+}
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+function StatusPill({ criminal }) {
+  if (criminal.is_wanted) return <span className="badge badge-red">Wanted</span>;
+  if (criminal.is_incarcerated) return <span className="badge badge-gray">Incarcerated</span>;
+  return <span className="badge badge-blue">On record</span>;
+}
+
+function CreateCriminalModal({ onClose, onCreated }) {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [duplicates, setDuplicates] = useState([]);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const first = useDebounced(form.first_name.trim());
+  const last = useDebounced(form.last_name.trim());
+  const dob = useDebounced(form.date_of_birth);
+
+  useEffect(() => {
+    if (first.length < 2 || last.length < 2) { setDuplicates([]); return; }
+    let cancelled = false;
+    criminalsAPI.checkDuplicate({ first_name: first, last_name: last, date_of_birth: dob || undefined })
+      .then((res) => { if (!cancelled) setDuplicates(res.data.duplicates || []); })
+      .catch(() => { if (!cancelled) setDuplicates([]); });
+    return () => { cancelled = true; };
+  }, [first, last, dob]);
+
+  const set = (key) => (e) => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    setForm((f) => ({ ...f, [key]: value }));
+    setFieldErrors((errs) => ({ ...errs, [key]: undefined }));
   };
 
-  const handleSubmit = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    setSaving(true);
+    setError('');
+    setFieldErrors({});
+    const payload = {
+      ...form,
+      prior_convictions: Number(form.prior_convictions) || 0,
+      date_of_birth: form.date_of_birth ? `${form.date_of_birth}T00:00:00Z` : null,
+      gender: form.gender || null,
+      crime_type: form.crime_type || null,
+      acknowledge_possible_duplicate: acknowledged,
+    };
     try {
-      await criminalsAPI.create({
-        first_name: formData.firstName,
-        last_name: formData.lastName,
-        date_of_birth: formData.dob,
-        gender: formData.gender,
-        crime_type: formData.crimeType,
-        crn: formData.crn || undefined
-      });
-      toast.success('Criminal record created successfully');
-      setIsModalOpen(false);
-      setFormData({ firstName: '', lastName: '', dob: '', gender: '', crimeType: '', crn: '' });
-      fetchCriminals();
-    } catch (error) {
-      toast.error('Failed to create criminal record');
-      console.error(error);
+      const res = await criminalsAPI.create(payload);
+      toast.success(`Record ${res.data.crn} created.`);
+      onCreated(res.data);
+    } catch (err) {
+      if (err.response?.status === 409 && err.response.data?.detail?.duplicates) {
+        setDuplicates(err.response.data.detail.duplicates.map((d) => ({
+          id: d.id, crn: d.crn, first_name: d.name, last_name: '', match_score: d.match_score,
+        })));
+        setError('A very similar record already exists. Check it, then confirm below if this is a different person.');
+      } else {
+        setFieldErrors(getFieldErrors(err));
+        setError(getErrorMessage(err, 'Could not create the record.'));
+      }
     } finally {
-      setIsSubmitting(false);
+      setSaving(false);
     }
   };
 
-  const filteredCriminals = criminals.filter(c => {
-    const name = `${c.first_name || c.firstName || ''} ${c.last_name || c.lastName || ''}`.toLowerCase();
-    const crn = (c.crn || '').toLowerCase();
-    const crime = (c.crime_type || c.crimeType || '').toLowerCase();
-    const query = searchQuery.toLowerCase();
-    return name.includes(query) || crn.includes(query) || crime.includes(query);
-  });
+  return (
+    <Modal title="Register offender record" onClose={onClose} busy={saving} maxWidth={620}>
+      <form onSubmit={submit}>
+        <div className="modal-body">
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
+          {duplicates.length > 0 && (
+            <div className="alert alert-warning" role="status" style={{ alignItems: 'flex-start' }}>
+              <AlertTriangle size={14} aria-hidden="true" style={{ marginTop: 2 }} />
+              <div>
+                <strong>Possible existing record{duplicates.length > 1 ? 's' : ''}:</strong>
+                <ul style={{ margin: '4px 0 6px 16px' }}>
+                  {duplicates.slice(0, 5).map((d) => (
+                    <li key={d.id}>
+                      <Link to={`/criminals/${d.id}`} target="_blank" rel="noreferrer">
+                        {`${d.first_name} ${d.last_name}`.trim()} ({d.crn})
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-primary)' }}>
+                  <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
+                  I have checked these; this is a different person.
+                </label>
+              </div>
+            </div>
+          )}
+
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-first">First name *</label>
+              <input id="c-first" className="form-control" required maxLength={50} value={form.first_name} onChange={set('first_name')}
+                aria-invalid={!!fieldErrors.first_name} aria-describedby="c-first-err" />
+              <FieldError id="c-first-err">{fieldErrors.first_name}</FieldError>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-last">Last name *</label>
+              <input id="c-last" className="form-control" required maxLength={50} value={form.last_name} onChange={set('last_name')}
+                aria-invalid={!!fieldErrors.last_name} aria-describedby="c-last-err" />
+              <FieldError id="c-last-err">{fieldErrors.last_name}</FieldError>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-dob">Date of birth</label>
+              <input id="c-dob" className="form-control" type="date" max={todayInputValue()} min="1900-01-01"
+                value={form.date_of_birth} onChange={set('date_of_birth')} />
+              <FieldError>{fieldErrors.date_of_birth}</FieldError>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-gender">Gender</label>
+              <select id="c-gender" className="form-select" value={form.gender} onChange={set('gender')}>
+                <option value="">Not recorded</option>
+                {GENDERS.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-alias">Known aliases</label>
+              <input id="c-alias" className="form-control" maxLength={200} value={form.alias} onChange={set('alias')} />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-nat">Nationality</label>
+              <input id="c-nat" className="form-control" maxLength={50} value={form.nationality} onChange={set('nationality')} />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-crime">Primary offence</label>
+              <select id="c-crime" className="form-select" value={form.crime_type} onChange={set('crime_type')}>
+                <option value="">Not classified</option>
+                {CRIME_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-prior">Prior convictions</label>
+              <input id="c-prior" className="form-control" type="number" min={0} max={100} value={form.prior_convictions}
+                onChange={set('prior_convictions')} />
+              <FieldError>{fieldErrors.prior_convictions}</FieldError>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="c-threat">Threat level (officer assessment)</label>
+              <select id="c-threat" className="form-select" value={form.threat_level} onChange={set('threat_level')}>
+                {THREAT_LEVELS.map((t) => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ display: 'flex', gap: 16, alignItems: 'center', paddingTop: 22 }}>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="checkbox" checked={form.is_wanted} onChange={set('is_wanted')} /> Wanted
+              </label>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="checkbox" checked={form.is_incarcerated} onChange={set('is_incarcerated')} /> Incarcerated
+              </label>
+            </div>
+          </div>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>A Criminal Record Number (CRN) is generated automatically.</p>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving || (duplicates.length > 0 && error && !acknowledged)}>
+            {saving ? <><span className="spinner" aria-hidden="true" /> Saving…</> : 'Create record'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export default function Criminals() {
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState({ crime_type: '', threat_level: '', is_wanted: '', sort: '' });
+  const [creating, setCreating] = useState(false);
+  const debouncedSearch = useDebounced(search.trim());
+  const requestRef = useRef(0);
+
+  const load = useCallback(() => {
+    const requestId = ++requestRef.current; // ignore responses that arrive out of order
+    setLoading(true);
+    setError('');
+    criminalsAPI.list({ search: debouncedSearch, ...filters, skip: page * PAGE_SIZE, limit: PAGE_SIZE })
+      .then((res) => { if (requestId === requestRef.current) { setRows(res.data || []); setTotal(totalCount(res)); } })
+      .catch((err) => { if (requestId === requestRef.current) setError(getErrorMessage(err, 'Failed to load records.')); })
+      .finally(() => { if (requestId === requestRef.current) setLoading(false); });
+  }, [debouncedSearch, filters, page]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(0); }, [debouncedSearch, filters]);
+
+  const setFilter = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Offender Records Directory</h1>
-          <p className="page-subtitle">Central intelligence database of offender dossiers and criminal profiles</p>
+          <p className="page-subtitle">{total.toLocaleString()} record{total === 1 ? '' : 's'} match the current filters</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
-          <Plus size={14} /> Register New Dossier
+        <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
+          <Plus size={14} aria-hidden="true" /> Register record
         </button>
       </div>
 
       <div className="table-container">
-        <div className="table-toolbar">
-          <div style={{ position: 'relative', flex: 1, maxWidth: '360px' }}>
-            <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              className="form-control"
-              style={{ paddingLeft: '30px', fontSize: '0.78rem' }}
-              type="text"
-              placeholder="Search CRN, name, or crime type..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+        <div className="table-toolbar" role="search">
+          <div className="search-box">
+            <Search size={13} aria-hidden="true" />
+            <label htmlFor="criminal-search" className="sr-only">Search records</label>
+            <input id="criminal-search" className="form-control" type="search" placeholder="Search name, alias, CRN, offence…"
+              value={search} onChange={(e) => setSearch(e.target.value)} maxLength={100} />
           </div>
-          <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Showing {filteredCriminals.length} of {criminals.length} records
+          <div className="toolbar-filters">
+            <label className="sr-only" htmlFor="f-crime">Offence</label>
+            <select id="f-crime" className="form-select" value={filters.crime_type} onChange={setFilter('crime_type')}>
+              <option value="">All offences</option>
+              {CRIME_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <label className="sr-only" htmlFor="f-threat">Threat level</label>
+            <select id="f-threat" className="form-select" value={filters.threat_level} onChange={setFilter('threat_level')}>
+              <option value="">All threat levels</option>
+              {THREAT_LEVELS.map((t) => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
+            </select>
+            <label className="sr-only" htmlFor="f-wanted">Wanted status</label>
+            <select id="f-wanted" className="form-select" value={filters.is_wanted} onChange={setFilter('is_wanted')}>
+              <option value="">Any status</option>
+              <option value="true">Wanted only</option>
+              <option value="false">Not wanted</option>
+            </select>
+            <label className="sr-only" htmlFor="f-sort">Sort by</label>
+            <select id="f-sort" className="form-select" value={filters.sort} onChange={setFilter('sort')}>
+              <option value="">Newest first</option>
+              <option value="last_name">Last name A–Z</option>
+              <option value="-prior_convictions">Most prior convictions</option>
+              <option value="crn">CRN</option>
+            </select>
           </div>
         </div>
 
-        {loading ? (
-          <div className="empty-state" style={{ padding: '36px' }}>
-            <div className="spinner" style={{ marginBottom: 10 }} />
-            <div className="empty-state-title">Loading criminal records directory...</div>
-          </div>
-        ) : filteredCriminals.length === 0 ? (
-          <div className="empty-state">
-            <Shield size={28} style={{ opacity: 0.3 }} />
-            <div className="empty-state-title">No matching offender records</div>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4 }}>
-              Try adjusting your search criteria or register a new offender dossier.
-            </p>
-          </div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>CRN Code</th>
-                <th>Offender Full Name</th>
-                <th>Primary Offence</th>
-                <th>Threat Rating</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCriminals.map(criminal => {
-                const name = `${criminal.first_name || criminal.firstName || ''} ${criminal.last_name || criminal.lastName || ''}`;
-                const crn = criminal.crn || `CRN-${criminal.id}`;
-                const crime = criminal.crime_type || criminal.crimeType || 'Unclassified';
-                const score = criminal.risk_score || (criminal.threatLevel === 'critical' ? 85 : criminal.threatLevel === 'high' ? 65 : criminal.threatLevel === 'medium' ? 45 : 20);
-
-                return (
-                  <tr key={criminal.id}>
-                    <td className="td-mono">{crn}</td>
-                    <td className="td-primary">{name}</td>
-                    <td>{crime}</td>
-                    <td>
-                      <RiskBadge score={score} level={criminal.threat_level || criminal.threatLevel} showBar />
-                    </td>
-                    <td>
-                      <StatusBadge status={criminal.is_wanted ? 'critical' : criminal.is_incarcerated ? 'medium' : 'low'} />
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <Link to={`/criminals/${criminal.id}`} className="btn btn-secondary btn-sm">
-                        <Eye size={12} /> View Dossier
-                      </Link>
-                    </td>
+        {loading ? <LoadingState label="Loading records…" />
+          : error ? <ErrorState message={error} onRetry={load} />
+          : rows.length === 0 ? (
+            <EmptyState icon={Shield} title="No matching records">Adjust the search or filters, or register a new record.</EmptyState>
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <caption className="sr-only">Offender records, page {page + 1}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">CRN</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Primary offence</th>
+                    <th scope="col">Threat level</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Registered</th>
+                    <th scope="col"><span className="sr-only">Actions</span></th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {rows.map((c) => (
+                    <tr key={c.id}>
+                      <td className="td-mono">{c.crn}</td>
+                      <td className="td-primary">{c.first_name} {c.last_name}{c.alias && <div className="td-sub">aka {c.alias}</div>}</td>
+                      <td>{c.crime_type || 'Not classified'}</td>
+                      <td><span className={`badge risk-${c.threat_level || 'low'}`}>{c.threat_level || 'low'}</span></td>
+                      <td><StatusPill criminal={c} /></td>
+                      <td className="td-mono">{formatDate(c.created_at)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Link to={`/criminals/${c.id}`} className="btn btn-secondary btn-sm" aria-label={`Open record for ${c.first_name} ${c.last_name}`}>
+                          <Eye size={12} aria-hidden="true" /> Open
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        {!loading && !error && total > 0 && (
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
         )}
       </div>
 
-      {/* Create Record Modal */}
-      {isModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <span className="modal-title">Register Offender Dossier</span>
-              <button className="btn btn-ghost btn-icon" onClick={() => setIsModalOpen(false)}>
-                <X size={15} />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSubmit}>
-              <div className="modal-body">
-                {duplicateWarning && (
-                  <div className="alert alert-warning">
-                    <AlertTriangle size={14} />
-                    <span>A record matching this full name already exists in database.</span>
-                  </div>
-                )}
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div className="form-group">
-                    <label className="form-label">First Name *</label>
-                    <input className="form-control" type="text" name="firstName" required value={formData.firstName} onChange={handleInputChange} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Last Name *</label>
-                    <input className="form-control" type="text" name="lastName" required value={formData.lastName} onChange={handleInputChange} />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div className="form-group">
-                    <label className="form-label">Date of Birth *</label>
-                    <input className="form-control" type="date" name="dob" required value={formData.dob} onChange={handleInputChange} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Gender *</label>
-                    <select className="form-select" name="gender" required value={formData.gender} onChange={handleInputChange}>
-                      <option value="">Select Gender</option>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Primary Offence Category *</label>
-                  <input className="form-control" type="text" name="crimeType" placeholder="e.g. Cybercrime, Robbery" required value={formData.crimeType} onChange={handleInputChange} />
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">CRN Code (Optional)</label>
-                  <input className="form-control" type="text" name="crn" placeholder="Auto-generated if left blank" value={formData.crn} onChange={handleInputChange} />
-                </div>
-              </div>
-              
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? <><span className="spinner" /> Saving...</> : 'Save Dossier'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {creating && (
+        <CreateCriminalModal onClose={() => setCreating(false)} onCreated={() => { setCreating(false); setPage(0); load(); }} />
       )}
     </div>
   );
-};
-
-export default Criminals;
+}
