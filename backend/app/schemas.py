@@ -25,6 +25,33 @@ class PredictionStatus(str, Enum):
     overridden = "overridden"
 
 
+class ThreatLevel(str, Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
+class CasePriority(str, Enum):
+    low = "low"
+    normal = "normal"
+    high = "high"
+    critical = "critical"
+
+
+class EvidenceStatus(str, Enum):
+    collected = "collected"
+    stored = "stored"
+    analyzed = "analyzed"
+    released = "released"
+
+
+class VictimStatus(str, Enum):
+    alive = "alive"
+    deceased = "deceased"
+    hospitalized = "hospitalized"
+
+
 # ── Auth Schemas ─────────────────────────────────────────────────────────────
 class Token(BaseModel):
     access_token: str
@@ -47,7 +74,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(..., min_length=8, max_length=128)
 
 
 class UserUpdate(BaseModel):
@@ -74,7 +101,7 @@ class GangBase(BaseModel):
     name: str
     alias: Optional[str] = None
     territory: Optional[str] = None
-    threat_level: Optional[str] = "medium"
+    threat_level: Optional[ThreatLevel] = ThreatLevel.medium
     known_activities: Optional[str] = None
     member_count: Optional[int] = 0
     is_active: Optional[bool] = True
@@ -109,6 +136,7 @@ class CriminalBase(BaseModel):
     email: Optional[str] = None
     occupation: Optional[str] = None
     photo_url: Optional[str] = None
+    fingerprint_id: Optional[str] = None
     crime_type: Optional[str] = None
     crime_category: Optional[str] = None
     prior_convictions: Optional[int] = 0
@@ -118,7 +146,7 @@ class CriminalBase(BaseModel):
     gang_rank: Optional[str] = None
     is_wanted: Optional[bool] = False
     is_incarcerated: Optional[bool] = False
-    threat_level: Optional[str] = "low"
+    threat_level: Optional[ThreatLevel] = ThreatLevel.low
 
 
 class CriminalCreate(CriminalBase):
@@ -170,7 +198,7 @@ class CaseBase(BaseModel):
     crime_category: Optional[str] = None
     location: Optional[str] = None
     incident_date: Optional[datetime] = None
-    priority: Optional[str] = "normal"
+    priority: Optional[CasePriority] = CasePriority.normal
     fir_number: Optional[str] = None
     fir_date: Optional[datetime] = None
     fir_filed_by: Optional[str] = None
@@ -209,6 +237,8 @@ class EvidenceOut(BaseModel):
     collected_by: Optional[str]
     collected_at: Optional[datetime]
     status: str
+    chain_of_custody: Optional[str]
+    file_url: Optional[str]
     created_at: datetime
 
     class Config:
@@ -255,7 +285,8 @@ class EvidenceCreate(BaseModel):
     collected_by: Optional[str] = None
     collected_at: Optional[datetime] = None
     chain_of_custody: Optional[str] = None
-    status: Optional[str] = "collected"
+    file_url: Optional[str] = None
+    status: Optional[EvidenceStatus] = EvidenceStatus.collected
 
 
 class VictimCreate(BaseModel):
@@ -266,7 +297,7 @@ class VictimCreate(BaseModel):
     address: Optional[str] = None
     phone: Optional[str] = None
     injury_description: Optional[str] = None
-    status: Optional[str] = "alive"
+    status: Optional[VictimStatus] = VictimStatus.alive
     statement: Optional[str] = None
 
 
@@ -336,10 +367,13 @@ class AuditLogOut(BaseModel):
     id: int
     user_id: Optional[int]
     username: Optional[str]
+    role: Optional[str]
     action: str
     resource_type: Optional[str]
     resource_id: Optional[int]
     details: Optional[Any]
+    status: str
+    reason: Optional[str]
     ip_address: Optional[str]
     created_at: datetime
 
@@ -358,6 +392,9 @@ class MLModelOut(BaseModel):
     f1_score: float
     training_samples: int
     feature_importances: Optional[Any]
+    evaluation_metadata: Optional[Any]
+    dataset_version: Optional[str]
+    evaluation_method: Optional[str]
     trained_at: datetime
     is_active: bool
     notes: Optional[str]
@@ -398,3 +435,62 @@ class SystemSettingOut(SystemSettingBase):
 
     class Config:
         from_attributes = True
+
+# ── Intelligence Network Schemas ────────────────────────────────────────────
+class NetworkNode(BaseModel):
+    id: str
+    type: str
+    label: str
+    record_id: int
+    route: Optional[str] = None
+    crn: Optional[str] = None
+    crime_type: Optional[str] = None
+    risk_score: Optional[float] = None
+    title: Optional[str] = None
+    status: Optional[str] = None
+    threat_level: Optional[str] = None
+    member_count: Optional[int] = None
+    username: Optional[str] = None
+    badge_number: Optional[str] = None
+
+
+class NetworkEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    type: str
+    label: str
+    case_id: Optional[int] = None
+    case_number: Optional[str] = None
+    gang_id: Optional[int] = None
+
+
+class NetworkMetadata(BaseModel):
+    criminal_id: Optional[int] = None
+    case_id: Optional[int] = None
+    gang_id: Optional[int] = None
+    depth: int
+    node_count: int
+    edge_count: int
+    relationship_types: List[str]
+    source: str
+
+
+class NetworkGraphOut(BaseModel):
+    nodes: List[NetworkNode]
+    edges: List[NetworkEdge]
+    metadata: NetworkMetadata
+
+# ── Password recovery schemas ────────────────────────────────────────────────
+class PasswordRecoveryRequest(BaseModel):
+    identifier: str = Field(..., min_length=3, max_length=100)
+
+
+class PasswordRecoveryVerify(BaseModel):
+    identifier: str = Field(..., min_length=3, max_length=100)
+    otp: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class PasswordReset(BaseModel):
+    reset_token: str = Field(..., min_length=20, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=128)

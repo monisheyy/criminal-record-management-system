@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminAPI } from '../services/api';
+import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement,
@@ -9,7 +10,7 @@ import {
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import {
   Shield, FileText, AlertTriangle, Brain, Users, Siren,
-  Activity, Plus, FolderPlus
+  Activity, Plus, FolderPlus, Download
 } from 'lucide-react';
 
 ChartJS.register(
@@ -56,6 +57,23 @@ export default function Dashboard() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const exportAnalytics = async (format) => {
+    try {
+      const res = format === 'excel' ? await adminAPI.dashboardExcel() : await adminAPI.dashboardPdf();
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ai_crms_dashboard_analytics.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`${format === 'excel' ? 'Excel' : 'PDF'} analytics exported.`);
+    } catch (err) {
+      toast.error(`Failed to export ${format === 'excel' ? 'Excel' : 'PDF'} analytics.`);
+    }
+  };
 
   if (loading) return (
     <div className="empty-state" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -129,6 +147,12 @@ export default function Dashboard() {
           <p className="page-subtitle">Welcome back, {user?.full_name}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={() => exportAnalytics('pdf')}>
+            <Download size={14} /> Export PDF
+          </button>
+          <button className="btn btn-secondary" onClick={() => exportAnalytics('excel')}>
+            <Download size={14} /> Export Excel
+          </button>
           <button className="btn btn-secondary" onClick={() => navigate('/criminals')}>
             <Plus size={14} /> Add Offender
           </button>

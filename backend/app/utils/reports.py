@@ -166,6 +166,21 @@ def generate_criminal_report(criminal_data: dict, predictions: list = None) -> b
         story.append(Spacer(1, 0.2*cm))
         story.append(Paragraph(f"<b>Modus Operandi:</b> {criminal_data['modus_operandi']}", _body_style()))
 
+    # Associated Cases
+    associated_cases = criminal_data.get('cases', [])
+    if associated_cases:
+        story.append(Paragraph(f"Associated Cases ({len(associated_cases)})", _section_style()))
+        story.append(HRFlowable(width='100%', color=ACCENT_BLUE, thickness=1))
+        rows = [['Case Number', 'Status', 'Crime Type', 'Role']] + [
+            [c.get('case_number', 'N/A'), c.get('status', 'N/A'), c.get('crime_type', 'N/A'), c.get('role', 'N/A')]
+            for c in associated_cases
+        ]
+        table = Table(rows, colWidths=[4*cm, 3*cm, 5*cm, 5*cm])
+        table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),DARK_BLUE),('TEXTCOLOR',(0,0),(-1,0),WHITE),
+                                   ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8),
+                                   ('ROWBACKGROUNDS',(0,1),(-1,-1),[LIGHT_GRAY,WHITE]),('GRID',(0,0),(-1,-1),0.5,MID_GRAY)]))
+        story.append(table)
+
     # AI Predictions
     if predictions:
         story.append(Paragraph("AI Advisory Predictions (Not Legal Conclusions)", _section_style()))
@@ -317,6 +332,21 @@ def generate_case_report(case_data: dict) -> bytes:
         ]))
         story.append(ev_table)
 
+    # Victims
+    victims = case_data.get('victims', [])
+    if victims:
+        story.append(Paragraph(f"Victims ({len(victims)})", _section_style()))
+        story.append(HRFlowable(width='100%', color=ACCENT_BLUE, thickness=1))
+        vrows = [['Name', 'Age', 'Gender', 'Status', 'Injury Description']] + [
+            [v.get('name', 'N/A'), str(v.get('age') or 'N/A'), v.get('gender', 'N/A'), v.get('status', 'N/A'), (v.get('injury_description') or 'N/A')[:45]]
+            for v in victims
+        ]
+        vt = Table(vrows, colWidths=[4*cm, 1.5*cm, 2*cm, 3*cm, 6.5*cm])
+        vt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),DARK_BLUE),('TEXTCOLOR',(0,0),(-1,0),WHITE),
+                                ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8),
+                                ('ROWBACKGROUNDS',(0,1),(-1,-1),[LIGHT_GRAY,WHITE]),('GRID',(0,0),(-1,-1),0.5,MID_GRAY)]))
+        story.append(vt)
+
     # Footer
     story.append(Spacer(1, 0.5*cm))
     story.append(HRFlowable(width='100%', color=MID_GRAY, thickness=0.5))
@@ -325,5 +355,139 @@ def generate_case_report(case_data: dict) -> bytes:
         ParagraphStyle('Footer', fontName='Helvetica-Oblique', fontSize=7, textColor=MID_GRAY, alignment=TA_CENTER)
     ))
 
+    doc.build(story)
+    return buffer.getvalue()
+
+
+# ── Excel exports ────────────────────────────────────────────────────────────
+def _excel_workbook():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    wb = Workbook()
+    return wb
+
+
+def _style_excel_sheet(ws):
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    header_fill = PatternFill('solid', fgColor='0D1B2A')
+    header_font = Font(color='FFFFFF', bold=True)
+    thin = Side(style='thin', color='D0D5DD')
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = Border(bottom=thin)
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = ws.dimensions
+    for column_cells in ws.columns:
+        width = min(max(max((len(str(c.value)) if c.value is not None else 0) for c in column_cells) + 2, 12), 42)
+        ws.column_dimensions[column_cells[0].column_letter].width = width
+
+
+def _write_sheet(wb, title, headers, rows):
+    ws = wb.active if wb.active.title == 'Sheet' and wb.active.max_row == 1 and wb.active['A1'].value is None else wb.create_sheet()
+    ws.title = title[:31]
+    # openpyxl creates a blank first row on a new workbook. Remove it so the
+    # exported sheet has a real header in row 1 rather than an empty row.
+    if ws.max_row == 1 and all(cell.value is None for cell in ws[1]):
+        ws.delete_rows(1, 1)
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    _style_excel_sheet(ws)
+    return ws
+
+
+def generate_criminal_excel(criminal_data: dict) -> bytes:
+    wb = _excel_workbook()
+    _write_sheet(wb, 'Criminal Profile',
+        ['CRN', 'Name', 'Crime Category', 'Prior Convictions', 'Gang', 'Risk Score', 'Prediction', 'Confidence'],
+        [[criminal_data.get('crn', 'N/A'), criminal_data.get('name', 'N/A'), criminal_data.get('crime_category', 'N/A'),
+          criminal_data.get('prior_convictions', 0), criminal_data.get('gang_name', 'None'), criminal_data.get('risk_score', 0),
+          criminal_data.get('prediction', 'N/A'), criminal_data.get('confidence', 0)]])
+
+    cases = criminal_data.get('cases', [])
+    _write_sheet(wb, 'Cases', ['Case Number', 'Status', 'Crime Type', 'Role'], [
+        [c.get('case_number', 'N/A'), c.get('status', 'N/A'), c.get('crime_type', 'N/A'), c.get('role', 'N/A')] for c in cases
+    ])
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+
+def generate_case_excel(case_data: dict) -> bytes:
+    wb = _excel_workbook()
+    _write_sheet(wb, 'Case Summary',
+        ['Case Number', 'FIR Number', 'FIR Date', 'Status', 'Officer'],
+        [[case_data.get('case_number', 'N/A'), case_data.get('fir_number', 'N/A'), case_data.get('fir_date', 'N/A'),
+          case_data.get('status', 'N/A'), case_data.get('officer_name', 'Unassigned')]])
+
+    _write_sheet(wb, 'Criminals', ['CRN', 'Name', 'Role'], [
+        [c.get('criminal', c).get('crn', 'N/A'),
+         f"{c.get('criminal', c).get('first_name', '')} {c.get('criminal', c).get('last_name', '')}".strip() or 'N/A',
+         c.get('role', 'N/A')] for c in case_data.get('criminals', [])
+    ])
+    _write_sheet(wb, 'Victims', ['Name', 'Age', 'Gender', 'Status', 'Injury Description'], [
+        [v.get('name', 'N/A'), v.get('age'), v.get('gender', 'N/A'), v.get('status', 'N/A'), v.get('injury_description', 'N/A')]
+        for v in case_data.get('victims', [])
+    ])
+    _write_sheet(wb, 'Evidence', ['Evidence Number', 'Type', 'Description', 'Collected By', 'Status'], [
+        [e.get('evidence_number', 'N/A'), e.get('type', 'N/A'), e.get('description', 'N/A'), e.get('collected_by', 'N/A'), e.get('status', 'N/A')]
+        for e in case_data.get('evidence', [])
+    ])
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+
+def generate_analytics_excel(analytics: dict) -> bytes:
+    wb = _excel_workbook()
+    _write_sheet(wb, 'KPI Summary', ['Metric', 'Value'], [
+        ['Total Criminals', analytics.get('total_criminals', 0)],
+        ['Total Cases', analytics.get('total_cases', 0)],
+        ['Open Cases', analytics.get('open_cases', 0)],
+        ['High Risk Criminals', analytics.get('high_risk_criminals', 0)],
+        ['Pending AI Reviews', analytics.get('pending_reviews', 0)],
+        ['Unread Alerts', analytics.get('unread_alerts', 0)],
+        ['Prediction Accuracy (%)', analytics.get('prediction_accuracy', 0)],
+    ])
+    _write_sheet(wb, 'Cases by Status', ['Status', 'Count'], [[k, v] for k, v in analytics.get('cases_by_status', {}).items()])
+    _write_sheet(wb, 'Crimes by Type', ['Crime Type', 'Count'], [[k, v] for k, v in analytics.get('crimes_by_type', {}).items()])
+    _write_sheet(wb, 'Monthly Cases', ['Month', 'Cases'], [[m.get('month'), m.get('cases', 0)] for m in analytics.get('monthly_cases', [])])
+    _write_sheet(wb, 'Officer Workload', ['Officer', 'Active Cases'], [[o.get('officer'), o.get('cases', 0)] for o in analytics.get('officer_workload', [])])
+    bio = io.BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+
+def generate_analytics_report(analytics: dict) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    story = [Paragraph('AI-CRMS — Dashboard Analytics Report', _header_style()),
+             Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | CONFIDENTIAL", _sub_header_style()), Spacer(1, 0.4*cm)]
+    story.append(Paragraph('Key Performance Indicators', _section_style()))
+    kpis = [
+        ['Total Criminals', analytics.get('total_criminals', 0)], ['Total Cases', analytics.get('total_cases', 0)],
+        ['Open Cases', analytics.get('open_cases', 0)], ['High Risk Criminals', analytics.get('high_risk_criminals', 0)],
+        ['Pending AI Reviews', analytics.get('pending_reviews', 0)], ['Unread Alerts', analytics.get('unread_alerts', 0)],
+        ['Prediction Accuracy', f"{analytics.get('prediction_accuracy', 0)}%"],
+    ]
+    t = Table(kpis, colWidths=[8*cm, 8*cm])
+    t.setStyle(TableStyle([('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('ROWBACKGROUNDS',(0,0),(-1,-1),[LIGHT_GRAY,WHITE]),('GRID',(0,0),(-1,-1),0.5,MID_GRAY),('FONTSIZE',(0,0),(-1,-1),9),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+    story.append(t)
+    for title, key in [('Cases by Status','cases_by_status'), ('Crimes by Type','crimes_by_type')]:
+        story.append(Paragraph(title, _section_style()))
+        rows = [['Category','Count']] + [[str(k), str(v)] for k,v in analytics.get(key, {}).items()]
+        if len(rows) == 1: rows.append(['No data', '0'])
+        tt = Table(rows, colWidths=[11*cm,5*cm])
+        tt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),DARK_BLUE),('TEXTCOLOR',(0,0),(-1,0),WHITE),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('ROWBACKGROUNDS',(0,1),(-1,-1),[LIGHT_GRAY,WHITE]),('GRID',(0,0),(-1,-1),0.5,MID_GRAY),('FONTSIZE',(0,0),(-1,-1),9)]))
+        story.append(tt)
+    story.append(Paragraph('Monthly Cases', _section_style()))
+    rows = [['Month','Cases']] + [[m.get('month','N/A'), str(m.get('cases',0))] for m in analytics.get('monthly_cases', [])]
+    mt = Table(rows, colWidths=[11*cm,5*cm])
+    mt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),DARK_BLUE),('TEXTCOLOR',(0,0),(-1,0),WHITE),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.5,MID_GRAY),('ROWBACKGROUNDS',(0,1),(-1,-1),[LIGHT_GRAY,WHITE])]))
+    story.append(mt)
     doc.build(story)
     return buffer.getvalue()

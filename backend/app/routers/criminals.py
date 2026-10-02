@@ -7,7 +7,7 @@ import random
 import string
 from app.database import get_db
 from app import models, schemas
-from app.security import get_current_user, require_any_role
+from app.security import require_any_role, require_officer_or_admin, require_clerk_or_officer_or_admin
 from app.utils.audit import create_audit_log, create_notification
 
 router = APIRouter(prefix="/api/criminals", tags=["criminals"])
@@ -57,7 +57,7 @@ async def list_criminals(
 async def create_criminal(
     data: schemas.CriminalCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_any_role)
+    current_user: models.User = Depends(require_clerk_or_officer_or_admin)
 ):
     crn = generate_crn()
     while db.query(models.Criminal).filter(models.Criminal.crn == crn).first():
@@ -79,7 +79,7 @@ async def create_criminal(
     db.add(hist)
     db.commit()
 
-    create_audit_log(db, "CRIMINAL_CREATED", user_id=current_user.id, username=current_user.username,
+    create_audit_log(db, "CRIMINAL_CREATED", user_id=current_user.id, username=current_user.username, role=current_user.role,
                      resource_type="criminal", resource_id=criminal.id,
                      details={"crn": crn, "name": f"{data.first_name} {data.last_name}"})
     return criminal
@@ -152,6 +152,7 @@ async def update_criminal(
         raise HTTPException(status_code=404, detail="Criminal not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    before = {k: getattr(criminal, k) for k in update_data.keys()}
     for k, v in update_data.items():
         setattr(criminal, k, v)
     db.commit()
@@ -167,8 +168,10 @@ async def update_criminal(
     db.add(hist)
     db.commit()
 
-    create_audit_log(db, "CRIMINAL_UPDATED", user_id=current_user.id, username=current_user.username,
-                     resource_type="criminal", resource_id=criminal_id)
+    after = {k: getattr(criminal, k) for k in update_data.keys()}
+    create_audit_log(db, "CRIMINAL_UPDATED", user_id=current_user.id, username=current_user.username, role=current_user.role,
+                     resource_type="criminal", resource_id=criminal_id,
+                     details={"before": before, "after": after})
     return criminal
 
 
@@ -185,7 +188,7 @@ async def delete_criminal(
         raise HTTPException(status_code=403, detail="Not authorized to delete criminal records")
     db.delete(criminal)
     db.commit()
-    create_audit_log(db, "CRIMINAL_DELETED", user_id=current_user.id, username=current_user.username,
+    create_audit_log(db, "CRIMINAL_DELETED", user_id=current_user.id, username=current_user.username, role=current_user.role,
                      resource_type="criminal", resource_id=criminal_id)
     return {"message": "Criminal record deleted"}
 
@@ -212,7 +215,7 @@ async def add_history_entry(
     location: Optional[str] = None,
     case_reference: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_any_role)
+    current_user: models.User = Depends(require_officer_or_admin)
 ):
     hist = models.CriminalHistory(
         criminal_id=criminal_id,
@@ -225,6 +228,8 @@ async def add_history_entry(
     )
     db.add(hist)
     db.commit()
+    create_audit_log(db, "CRIMINAL_HISTORY_ADDED", user_id=current_user.id, username=current_user.username, role=current_user.role,
+                     resource_type="criminal_history", resource_id=hist.id, details={"criminal_id": criminal_id, "event_type": event_type})
     return {"message": "History entry added"}
 
 
@@ -235,7 +240,7 @@ async def get_criminal_report(
     current_user: models.User = Depends(require_any_role)
 ):
     from fastapi.responses import Response
-    from app.utils.reports import generate_criminal_report
+    from app.utils.reports import generate_criminal_report, generate_criminal_excel
 
     criminal = db.query(models.Criminal).filter(models.Criminal.id == criminal_id).first()
     if not criminal:
@@ -263,6 +268,9 @@ async def get_criminal_report(
         "risk_score": criminal.risk_score,
         "gang_name": criminal.gang.name if criminal.gang else None,
         "gang_rank": criminal.gang_rank,
+        "prediction": None,
+        "confidence": 0,
+        "cases": [],
     }
     predictions = db.query(models.AIPrediction).filter(
         models.AIPrediction.criminal_id == criminal_id
@@ -273,12 +281,64 @@ async def get_criminal_report(
                    "risk_level": p.risk_level,
                    "gang_affiliation_probability": p.gang_affiliation_probability,
                    "review_status": p.review_status.value} for p in predictions]
+    latest_prediction = predictions[0] if predictions else None
+    criminal_dict["prediction"] = latest_prediction.predicted_crime_type if latest_prediction else None
+    criminal_dict["confidence"] = latest_prediction.crime_type_confidence if latest_prediction else 0
+    criminal_dict["cases"] = [
+        {
+            "case_number": cc.case.case_number,
+            "status": cc.case.status.value,
+            "crime_type": cc.case.crime_type,
+            "role": cc.role,
+        }
+        for cc in db.query(models.CaseCriminal).filter(models.CaseCriminal.criminal_id == criminal_id).all()
+    ]
 
     pdf_bytes = generate_criminal_report(criminal_dict, pred_dicts)
-    create_audit_log(db, "CRIMINAL_REPORT_GENERATED", user_id=current_user.id,
+    create_audit_log(db, "REPORT_GENERATED", user_id=current_user.id, role=current_user.role,
                      username=current_user.username, resource_type="criminal", resource_id=criminal_id)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=criminal_{criminal.crn}.pdf"}
     )
+
+
+@router.get("/{criminal_id}/report/excel")
+async def get_criminal_excel_report(
+    criminal_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_any_role)
+):
+    from fastapi.responses import Response
+    from app.utils.reports import generate_criminal_excel
+
+    criminal = db.query(models.Criminal).filter(models.Criminal.id == criminal_id).first()
+    if not criminal:
+        raise HTTPException(status_code=404, detail="Criminal not found")
+
+    predictions = db.query(models.AIPrediction).filter(
+        models.AIPrediction.criminal_id == criminal_id
+    ).order_by(models.AIPrediction.created_at.desc()).limit(1).all()
+    latest = predictions[0] if predictions else None
+    data = {
+        "crn": criminal.crn,
+        "name": f"{criminal.first_name} {criminal.last_name}",
+        "crime_category": criminal.crime_category,
+        "prior_convictions": criminal.prior_convictions,
+        "gang_name": criminal.gang.name if criminal.gang else None,
+        "risk_score": criminal.risk_score,
+        "prediction": latest.predicted_crime_type if latest else None,
+        "confidence": latest.crime_type_confidence if latest else 0,
+        "cases": [{
+            "case_number": cc.case.case_number,
+            "status": cc.case.status.value,
+            "crime_type": cc.case.crime_type,
+            "role": cc.role,
+        } for cc in db.query(models.CaseCriminal).filter(models.CaseCriminal.criminal_id == criminal_id).all()]
+    }
+    xlsx = generate_criminal_excel(data)
+    create_audit_log(db, "REPORT_EXCEL_GENERATED", user_id=current_user.id, role=current_user.role,
+                     username=current_user.username, resource_type="criminal", resource_id=criminal_id)
+    return Response(content=xlsx, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename=criminal_{criminal.crn}.xlsx"})
