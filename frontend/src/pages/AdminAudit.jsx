@@ -1,70 +1,128 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Clock, ChevronLeft, ChevronRight, Filter, RotateCcw } from 'lucide-react';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { adminAPI } from '../services/api';
+import { Filter, RotateCcw, ShieldCheck } from 'lucide-react';
+import { adminAPI, getErrorMessage } from '../services/api';
+import { ErrorState, LoadingState, Pagination } from '../components/ui';
+import { formatDate } from '../utils/format';
+import { usePagedList } from '../utils/usePagedList';
 
-const ACTION_BADGE = (action) => {
-  if (action?.includes('LOGIN')) return 'badge-green';
-  if (action?.includes('DELETE')) return 'badge-red';
-  if (action?.includes('CREATE') || action?.includes('ADDED')) return 'badge-blue';
-  if (action?.includes('UPDATE') || action?.includes('CHANGED')) return 'badge-amber';
-  if (action?.includes('AI')) return 'badge-purple';
+const ACTION_BADGE = (action = '') => {
+  if (action.includes('FAILED') || action.includes('BLOCKED')) return 'badge-red';
+  if (action.includes('LOGIN')) return 'badge-green';
+  if (action.includes('DELETE')) return 'badge-red';
+  if (action.includes('CREATE') || action.includes('ADDED')) return 'badge-blue';
+  if (action.includes('UPDATE') || action.includes('CHANGED')) return 'badge-amber';
+  if (action.includes('AI') || action.includes('MODEL')) return 'badge-purple';
   return 'badge-gray';
 };
-const LIMIT = 20;
+const EMPTY = { user_id: '', action: '', resource_type: '', status: '', request_id: '', date_from: '', date_to: '' };
 
 export default function AdminAudit() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [filters, setFilters] = useState({ user_id: '', action: '', resource_type: '', status: '', date_from: '', date_to: '' });
+  const [filters, setFilters] = useState(EMPTY);
   const [applied, setApplied] = useState({});
+  const [verification, setVerification] = useState(null);
+  const [verifying, setVerifying] = useState(false);
+  const list = usePagedList(adminAPI.auditLogs, applied, 25);
 
-  const fetchLogs = useCallback(() => {
-    setLoading(true);
-    const params = { skip: page * LIMIT, limit: LIMIT + 1, ...applied };
-    Object.keys(params).forEach(k => { if (params[k] === '' || params[k] == null) delete params[k]; });
-    adminAPI.auditLogs(params)
-      .then(r => { const data = r.data || []; setHasMore(data.length > LIMIT); setLogs(data.slice(0, LIMIT)); })
-      .catch(() => toast.error('Failed to fetch audit logs.'))
-      .finally(() => setLoading(false));
-  }, [page, applied]);
+  const set = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
+  const apply = (e) => {
+    e.preventDefault();
+    setApplied({ ...filters, date_to: filters.date_to ? `${filters.date_to}T23:59:59` : '' });
+  };
 
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
-  const applyFilters = (e) => { e.preventDefault(); setPage(0); setApplied({ ...filters }); };
-  const resetFilters = () => { const empty = { user_id: '', action: '', resource_type: '', status: '', date_from: '', date_to: '' }; setFilters(empty); setApplied({}); setPage(0); };
+  const verify = async () => {
+    setVerifying(true);
+    try {
+      const res = await adminAPI.verifyAuditLogs();
+      setVerification(res.data);
+      if (res.data.intact) toast.success(`All ${res.data.checked} audit entries verified.`);
+      else toast.error(`${res.data.tampered_count} audit entries failed verification.`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Verification failed.'));
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   return (
     <div>
-      <div className="page-header"><div><h1 className="page-title">System Audit Trail</h1><p className="page-subtitle">Administrator-only audit trail of security-sensitive activities and system transactions</p></div></div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Audit Trail</h1>
+          <p className="page-subtitle">Append-only, tamper-evident log of security-relevant activity · {list.total.toLocaleString()} matching entries</p>
+        </div>
+        <button type="button" className="btn btn-secondary" onClick={verify} disabled={verifying}>
+          <ShieldCheck size={14} aria-hidden="true" /> {verifying ? 'Verifying…' : 'Verify integrity'}
+        </button>
+      </div>
 
-      <form onSubmit={applyFilters} style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:10, marginBottom:16, padding:14, border:'1px solid var(--border-color)', borderRadius:8 }}>
-        <input className="input" placeholder="User ID" value={filters.user_id} onChange={e=>setFilters({...filters,user_id:e.target.value})} inputMode="numeric" />
-        <input className="input" placeholder="Action" value={filters.action} onChange={e=>setFilters({...filters,action:e.target.value})} />
-        <input className="input" placeholder="Resource" value={filters.resource_type} onChange={e=>setFilters({...filters,resource_type:e.target.value})} />
-        <select className="input" value={filters.status} onChange={e=>setFilters({...filters,status:e.target.value})}><option value="">All statuses</option><option value="success">Success</option><option value="failure">Failure</option></select>
-        <input className="input" type="date" title="From date" value={filters.date_from} onChange={e=>setFilters({...filters,date_from:e.target.value})} />
-        <input className="input" type="date" title="To date" value={filters.date_to} onChange={e=>setFilters({...filters,date_to:e.target.value ? `${e.target.value}T23:59:59` : ''})} />
-        <div style={{display:'flex',gap:8,alignItems:'center'}}><button className="btn btn-primary btn-sm" type="submit"><Filter size={14}/> Filter</button><button className="btn btn-secondary btn-sm" type="button" onClick={resetFilters}><RotateCcw size={14}/> Reset</button></div>
+      {verification && (
+        <div className={`alert ${verification.intact ? 'alert-info' : 'alert-error'}`} role="status">
+          {verification.intact
+            ? `Integrity verified: ${verification.checked} entries checked, ${verification.unsigned_legacy_entries} legacy entries predate signing.`
+            : `Tampering detected in ${verification.tampered_count} entr${verification.tampered_count === 1 ? 'y' : 'ies'} (IDs ${verification.tampered_entry_ids.join(', ')}). Preserve evidence and follow the incident procedure.`}
+        </div>
+      )}
+
+      <form onSubmit={apply} className="filter-bar" aria-label="Filter audit entries">
+        <div><label className="form-label" htmlFor="a-user">User ID</label>
+          <input id="a-user" className="form-control" inputMode="numeric" value={filters.user_id} onChange={set('user_id')} /></div>
+        <div><label className="form-label" htmlFor="a-action">Action contains</label>
+          <input id="a-action" className="form-control" value={filters.action} onChange={set('action')} /></div>
+        <div><label className="form-label" htmlFor="a-resource">Resource type</label>
+          <input id="a-resource" className="form-control" value={filters.resource_type} onChange={set('resource_type')} /></div>
+        <div><label className="form-label" htmlFor="a-status">Outcome</label>
+          <select id="a-status" className="form-select" value={filters.status} onChange={set('status')}>
+            <option value="">Any</option><option value="success">Success</option><option value="failure">Failure</option>
+          </select></div>
+        <div><label className="form-label" htmlFor="a-request">Request ID</label>
+          <input id="a-request" className="form-control mono" value={filters.request_id} onChange={set('request_id')} /></div>
+        <div><label className="form-label" htmlFor="a-from">From</label>
+          <input id="a-from" className="form-control" type="date" value={filters.date_from} onChange={set('date_from')} /></div>
+        <div><label className="form-label" htmlFor="a-to">To</label>
+          <input id="a-to" className="form-control" type="date" value={filters.date_to} onChange={set('date_to')} /></div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <button className="btn btn-primary btn-sm" type="submit"><Filter size={14} aria-hidden="true" /> Apply</button>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setFilters(EMPTY); setApplied({}); }}>
+            <RotateCcw size={14} aria-hidden="true" /> Reset
+          </button>
+        </div>
       </form>
 
       <div className="table-container">
-        {loading ? <div className="empty-state" style={{padding:'40px'}}><div className="spinner" style={{marginBottom:12}}/><div className="empty-state-title">Loading audit logs...</div></div> : (
-          <table><thead><tr><th>Timestamp (UTC)</th><th>Actor</th><th>Role</th><th>Action</th><th>Resource</th><th>Status</th><th>IP</th><th>Metadata</th></tr></thead>
-          <tbody>{logs.length===0 ? <tr><td colSpan={8} style={{textAlign:'center',color:'var(--text-muted)',padding:32}}>No audit records match the selected filters.</td></tr> : logs.map(log => <tr key={log.id}>
-            <td className="td-mono" style={{fontSize:'.78rem'}}><Clock size={11} style={{marginRight:4}}/>{new Date(log.created_at).toLocaleString()}</td>
-            <td><div className="td-primary">{log.username || 'System'}</div>{log.user_id && <div className="mono" style={{fontSize:'.72rem',color:'var(--text-muted)'}}>ID #{log.user_id}</div>}</td>
-            <td style={{fontSize:'.75rem'}}>{log.role || 'system'}</td>
-            <td><span className={`badge ${ACTION_BADGE(log.action)}`}>{log.action}</span></td>
-            <td style={{fontSize:'.8rem',color:'var(--text-secondary)'}}>{log.resource_type || '—'}{log.resource_id != null ? ` #${log.resource_id}` : ''}</td>
-            <td><span className={`badge ${log.status === 'success' ? 'badge-green' : 'badge-red'}`}>{log.status}</span></td>
-            <td className="td-mono" style={{fontSize:'.75rem'}}>{log.ip_address || '—'}</td>
-            <td style={{fontSize:'.72rem',color:'var(--text-muted)',maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={log.reason || ''}>{log.reason || (log.details ? JSON.stringify(log.details) : '—')}</td>
-          </tr>)}</tbody></table>
+        {list.loading ? <LoadingState label="Loading audit entries…" />
+          : list.error ? <ErrorState message={list.error} onRetry={list.reload} /> : (
+            <div className="table-scroll">
+              <table>
+                <caption className="sr-only">Audit entries</caption>
+                <thead><tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Resource</th><th scope="col">Outcome</th><th scope="col">Reason / details</th><th scope="col">Request</th></tr></thead>
+                <tbody>
+                  {list.rows.length === 0 ? (
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32 }} className="td-sub">No entries match the filters.</td></tr>
+                  ) : list.rows.map((log) => (
+                    <tr key={log.id}>
+                      <td className="td-date">{formatDate(log.created_at, { withTime: true })}</td>
+                      <td><div className="td-primary">{log.username || 'system'}</div><div className="td-sub">{log.role || '—'}{log.ip_address ? ` · ${log.ip_address}` : ''}</div></td>
+                      <td><span className={`badge ${ACTION_BADGE(log.action)}`}>{log.action}</span></td>
+                      <td>{log.resource_type || '—'}{log.resource_id != null ? ` #${log.resource_id}` : ''}</td>
+                      <td><span className={`badge ${log.status === 'success' ? 'badge-green' : 'badge-red'}`}>{log.status}</span></td>
+                      <td style={{ maxWidth: 320 }}>
+                        {log.reason && <div>{log.reason}</div>}
+                        {log.details && Object.keys(log.details).length > 0 && (
+                          <details><summary className="td-sub">Details</summary><pre className="custody-log">{JSON.stringify(log.details, null, 2)}</pre></details>
+                        )}
+                      </td>
+                      <td className="td-mono td-sub" title={log.request_id || ''}>{log.request_id ? `${log.request_id.slice(0, 8)}…` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        {!list.loading && !list.error && list.total > 0 && (
+          <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onPageChange={list.setPage} label="entries" />
         )}
       </div>
-      <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:10,marginTop:12}}><button className="btn btn-secondary btn-sm" disabled={page===0} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={14}/> Previous</button><span className="mono" style={{fontSize:'.8rem',color:'var(--text-muted)'}}>Page {page+1}</span><button className="btn btn-secondary btn-sm" disabled={!hasMore} onClick={()=>setPage(p=>p+1)}>Next <ChevronRight size={14}/></button></div>
     </div>
   );
 }

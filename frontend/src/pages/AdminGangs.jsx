@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit2, Trash2, X, ShieldAlert, Database } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Database } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { gangsAPI } from '../services/api';
+import { gangsAPI, getErrorMessage } from '../services/api';
+import { ConfirmDialog } from '../components/ui';
 
 const THREAT_LEVELS = ['low', 'medium', 'high', 'critical'];
 
@@ -17,12 +18,13 @@ export default function AdminGangs() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const fetchGangs = useCallback(() => {
     setLoading(true);
     gangsAPI.list()
       .then(r => setGangs(r.data || []))
-      .catch(() => toast.error('Failed to load gangs.'))
+      .catch((err) => toast.error(getErrorMessage(err, 'Failed to load gangs.')))
       .finally(() => setLoading(false));
   }, []);
 
@@ -66,21 +68,23 @@ export default function AdminGangs() {
       setModalOpen(false);
       fetchGangs();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to save gang.');
+      toast.error(getErrorMessage(err, 'Failed to save gang.'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (gang) => {
-    if (!window.confirm(`Delete criminal gang "${gang.name}"?`)) return;
+  const handleDelete = (gang) => setPendingDelete(gang);
+
+  const confirmDelete = async () => {
     try {
-      await gangsAPI.delete(gang.id);
+      await gangsAPI.delete(pendingDelete.id);
       toast.success('Gang record deleted.');
       fetchGangs();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to delete gang.');
+      toast.error(getErrorMessage(err, 'Failed to delete gang.'));
     }
+    setPendingDelete(null);
   };
 
   return (
@@ -214,6 +218,11 @@ export default function AdminGangs() {
             </form>
           </div>
         </div>
+      )}
+      {pendingDelete && (
+        <ConfirmDialog title={`Delete "${pendingDelete.name}"?`} confirmLabel="Delete" danger
+          message="Gangs referenced by criminal records or AI outputs cannot be deleted; mark them inactive instead."
+          onCancel={() => setPendingDelete(null)} onConfirm={confirmDelete} />
       )}
     </div>
   );

@@ -1,101 +1,199 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import {
-  FileText, Download, Brain, User, Activity, History,
-  Shield, ChevronLeft, Clock, AlertTriangle, ExternalLink, ChevronRight
-} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { criminalsAPI, aiAPI } from '../services/api';
-import { RiskBadge, StatusBadge } from '../components/RiskBadge';
+import { Brain, ChevronLeft, Clock, Download, Edit2, FileText, History, Plus, Trash2 } from 'lucide-react';
+import { aiAPI, criminalsAPI, getErrorMessage, saveBlob } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { RiskBadge, StatusBadge } from '../components/RiskBadge';
+import { AIAdvisoryBanner, ConfirmDialog, ErrorState, FieldHint, LoadingState, Modal } from '../components/ui';
+import ExplanationPanel from '../components/ExplanationPanel';
+import { CRIME_TYPES, GENDERS, THREAT_LEVELS } from '../utils/constants';
+import { formatDate, formatScore, todayInputValue } from '../utils/format';
+import { humanize } from '../utils/errors';
 
-const safeDate = (d) => {
-  if (!d) return 'N/A';
-  try { return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return 'N/A'; }
-};
+const HISTORY_TYPES = ['arrest', 'charge', 'conviction', 'acquittal', 'release', 'parole', 'warrant_issued',
+  'warrant_cleared', 'bail_granted', 'wanted_notice', 'sighting', 'associate_link', 'note'];
 
-function ExplanationPanel({ prediction }) {
-  const [open, setOpen] = useState(false);
-  const explanation = prediction?.input_features?.explanation;
-  const features = explanation?.top_features || [];
-  const similar = prediction?.similar_criminals || [];
+function EditModal({ profile, onClose, onSaved }) {
+  const initial = {
+    first_name: profile.first_name, last_name: profile.last_name, alias: profile.alias || '',
+    date_of_birth: profile.date_of_birth ? profile.date_of_birth.slice(0, 10) : '', gender: profile.gender || '',
+    nationality: profile.nationality || '', occupation: profile.occupation || '', crime_type: profile.crime_type || '',
+    prior_convictions: profile.prior_convictions ?? 0, threat_level: profile.threat_level || 'low',
+    is_wanted: !!profile.is_wanted, is_incarcerated: !!profile.is_incarcerated, modus_operandi: profile.modus_operandi || '',
+  };
+  const [form, setForm] = useState(initial);
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  const changed = Object.keys(form).filter((k) => String(form[k]) !== String(initial[k]));
+  const sensitive = changed.some((k) => ['is_wanted', 'threat_level'].includes(k));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!changed.length) { onClose(); return; }
+    setSaving(true);
+    setError('');
+    const payload = Object.fromEntries(changed.map((k) => {
+      let value = form[k];
+      if (k === 'prior_convictions') value = Number(value) || 0;
+      if (k === 'date_of_birth') value = value ? `${value}T00:00:00Z` : null;
+      if (value === '' && !['first_name', 'last_name'].includes(k)) value = null;
+      return [k, value];
+    }));
+    if (reason.trim()) payload.correction_reason = reason.trim();
+    try {
+      const res = await criminalsAPI.update(profile.id, payload);
+      toast.success('Record updated; the change is in the record history.');
+      onSaved(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not update the record.'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div style={{ marginBottom: 16, padding: 14, border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
-      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(v => !v)} style={{ width: '100%', justifyContent: 'space-between', padding: 0 }}>
-        <span style={{ fontWeight: 700 }}>Why did the model produce this result?</span>
-        <ChevronRight size={15} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
-      </button>
-      {open && (
-        <div style={{ marginTop: 14 }}>
-          {features.length > 0 ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-                <thead><tr>
-                  <th style={{ textAlign: 'left', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Feature</th>
-                  <th style={{ textAlign: 'right', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Value</th>
-                  <th style={{ textAlign: 'right', padding: '7px 6px', borderBottom: '1px solid var(--border)' }}>Relative Importance</th>
-                </tr></thead>
-                <tbody>{features.map(item => <tr key={item.feature}>
-                  <td style={{ padding: '7px 6px', color: 'var(--text-secondary)' }}>{item.feature.replace(/_/g, ' ')}</td>
-                  <td className="td-mono" style={{ padding: '7px 6px', textAlign: 'right' }}>{item.value}</td>
-                  <td className="td-mono" style={{ padding: '7px 6px', textAlign: 'right' }}>{(item.relative_importance * 100).toFixed(2)}%</td>
-                </tr>)}</tbody>
-              </table>
-            </div>
-          ) : <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>No model explanation metadata is available for this prediction.</div>}
-          <div style={{ marginTop: 10, fontSize: '0.7rem', color: 'var(--text-muted)' }}>Important model features indicate relative Random Forest model importance; they do not establish that a feature caused the prediction.</div>
-          <div style={{ marginTop: 14 }}>
-            <div className="form-label" style={{ marginBottom: 7 }}>Similar Records</div>
-            {similar.length > 0 ? similar.map(item => <div key={item.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border-subtle)', fontSize: '0.78rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                <span>{item.name || `Record #${item.id}`}</span>
-                <span className="td-mono">{Number(item.score).toFixed(1)}% · {item.crime_type || 'N/A'}</span>
-              </div>
-              {Array.isArray(item.matching_features) && item.matching_features.length > 0 && (
-                <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: '0.68rem' }}>
-                  Matching features: {item.matching_features.map(feature => feature.replace(/_/g, ' ')).join(', ')}
-                </div>
-              )}
-            </div>) : <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>No similar records available.</div>}
+    <Modal title="Edit record" onClose={onClose} busy={saving} maxWidth={640}>
+      <form onSubmit={submit}>
+        <div className="modal-body">
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
+          <div className="form-grid">
+            <div className="form-group"><label className="form-label" htmlFor="ed-first">First name *</label>
+              <input id="ed-first" className="form-control" required maxLength={50} value={form.first_name} onChange={set('first_name')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-last">Last name *</label>
+              <input id="ed-last" className="form-control" required maxLength={50} value={form.last_name} onChange={set('last_name')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-alias">Aliases</label>
+              <input id="ed-alias" className="form-control" maxLength={200} value={form.alias} onChange={set('alias')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-dob">Date of birth</label>
+              <input id="ed-dob" className="form-control" type="date" max={todayInputValue()} min="1900-01-01" value={form.date_of_birth} onChange={set('date_of_birth')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-gender">Gender</label>
+              <select id="ed-gender" className="form-select" value={form.gender} onChange={set('gender')}>
+                <option value="">Not recorded</option>{GENDERS.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-nat">Nationality</label>
+              <input id="ed-nat" className="form-control" maxLength={50} value={form.nationality} onChange={set('nationality')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-occ">Occupation</label>
+              <input id="ed-occ" className="form-control" maxLength={100} value={form.occupation} onChange={set('occupation')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-crime">Primary offence</label>
+              <select id="ed-crime" className="form-select" value={form.crime_type} onChange={set('crime_type')}>
+                <option value="">Not classified</option>{CRIME_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-prior">Prior convictions</label>
+              <input id="ed-prior" className="form-control" type="number" min={0} max={100} value={form.prior_convictions} onChange={set('prior_convictions')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="ed-threat">Threat level</label>
+              <select id="ed-threat" className="form-select" value={form.threat_level} onChange={set('threat_level')}>
+                {THREAT_LEVELS.map((t) => <option key={t} value={t}>{humanize(t)}</option>)}
+              </select></div>
           </div>
-          <div style={{ marginTop: 10, display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-            <span>Model: <strong>{prediction.model_version}</strong></span>
-            <span>Generated: <strong>{prediction.created_at ? new Date(prediction.created_at).toLocaleString() : 'N/A'}</strong></span>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={form.is_wanted} onChange={set('is_wanted')} /> Wanted</label>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={form.is_incarcerated} onChange={set('is_incarcerated')} /> Incarcerated</label>
+          </div>
+          <div className="form-group"><label className="form-label" htmlFor="ed-mo">Modus operandi</label>
+            <textarea id="ed-mo" className="form-control" rows={2} maxLength={5000} value={form.modus_operandi} onChange={set('modus_operandi')} /></div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor="ed-reason">Reason for change {sensitive ? '*' : ''}</label>
+            <textarea id="ed-reason" className="form-control" rows={2} maxLength={500} required={sensitive} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <FieldHint>Required when changing wanted status or threat level. Stored in the record history and audit log.</FieldHint>
           </div>
         </div>
-      )}
-    </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : `Save ${changed.length || ''} change${changed.length === 1 ? '' : 's'}`}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function HistoryModal({ criminalId, onClose, onSaved }) {
+  const [form, setForm] = useState({ event_type: 'arrest', description: '', location: '', case_reference: '', date: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const payload = Object.fromEntries(Object.entries({ ...form, date: form.date ? `${form.date}T12:00:00Z` : null })
+        .filter(([, v]) => v !== '' && v !== null));
+      await criminalsAPI.addHistory(criminalId, payload);
+      toast.success('History entry added.');
+      onSaved();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal title="Add history entry" onClose={onClose} busy={saving}>
+      <form onSubmit={submit}>
+        <div className="modal-body">
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
+          <div className="form-grid">
+            <div className="form-group"><label className="form-label" htmlFor="h-type">Event *</label>
+              <select id="h-type" className="form-select" value={form.event_type} onChange={set('event_type')}>
+                {HISTORY_TYPES.map((t) => <option key={t} value={t}>{humanize(t)}</option>)}
+              </select></div>
+            <div className="form-group"><label className="form-label" htmlFor="h-date">Date</label>
+              <input id="h-date" className="form-control" type="date" max={todayInputValue()} value={form.date} onChange={set('date')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="h-loc">Location</label>
+              <input id="h-loc" className="form-control" maxLength={200} value={form.location} onChange={set('location')} /></div>
+            <div className="form-group"><label className="form-label" htmlFor="h-ref">Case reference</label>
+              <input id="h-ref" className="form-control" maxLength={50} value={form.case_reference} onChange={set('case_reference')} /></div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" htmlFor="h-desc">Description *</label>
+            <textarea id="h-desc" className="form-control" rows={3} required minLength={3} maxLength={2000} value={form.description} onChange={set('description')} /></div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add entry'}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
 export default function CriminalProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAdmin, isOfficer } = useAuth();
+  const { isAdmin, isOfficer, isClerk } = useAuth();
+  const canUseAI = isAdmin || isOfficer;
 
   const [profile, setProfile] = useState(null);
   const [history, setHistory] = useState([]);
   const [predictions, setPredictions] = useState([]);
+  const [aiStatus, setAiStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [predicting, setPredicting] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState('');
+  const [dialog, setDialog] = useState(null);
 
-  const fetchAll = useCallback(() => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
-    Promise.all([
-      criminalsAPI.get(id),
-      criminalsAPI.history(id),
-      aiAPI.list({ criminal_id: id }),
-    ])
-      .then(([profileRes, histRes, predRes]) => {
-        setProfile(profileRes.data);
-        setHistory(histRes.data || []);
-        setPredictions(predRes.data || []);
-      })
-      .catch(() => toast.error('Failed to load criminal dossier profile.'))
-      .finally(() => setLoading(false));
-  }, [id]);
+    setError('');
+    try {
+      const [profileRes, histRes] = await Promise.all([criminalsAPI.get(id), criminalsAPI.history(id)]);
+      setProfile(profileRes.data);
+      setHistory(histRes.data || []);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to load the record.'));
+      setLoading(false);
+      return;
+    }
+    if (canUseAI) {
+      // AI data is optional context: its failure must not hide the record itself.
+      const [preds, status] = await Promise.allSettled([aiAPI.list({ criminal_id: id, limit: 5 }), aiAPI.status()]);
+      setPredictions(preds.status === 'fulfilled' ? preds.value.data || [] : []);
+      setAiStatus(status.status === 'fulfilled' ? status.value.data : null);
+    }
+    setLoading(false);
+  }, [id, canUseAI]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -103,249 +201,159 @@ export default function CriminalProfile() {
     setPredicting(true);
     try {
       const res = await aiAPI.predict({ criminal_id: Number(id) });
-      setPredictions(prev => [res.data, ...prev]);
-      const updated = await criminalsAPI.get(id);
-      setProfile(updated.data);
-      toast.success('AI risk assessment generated.');
+      setPredictions((prev) => [res.data, ...prev]);
+      toast.success('AI assessment created. It is unverified until a reviewer records a decision.');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'AI risk assessment failed.');
+      toast.error(getErrorMessage(err, 'AI assessment failed.'));
     } finally {
       setPredicting(false);
     }
   };
 
   const downloadReport = async (format) => {
-    setDownloading(true);
+    setDownloading(format);
     try {
       const res = format === 'excel' ? await criminalsAPI.reportExcel(id) : await criminalsAPI.report(id);
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `dossier_${profile.crn || id}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success(`Dossier ${format === 'excel' ? 'Excel' : 'PDF'} downloaded.`);
-    } catch {
-      toast.error(`Failed to download ${format === 'excel' ? 'Excel' : 'PDF'} report.`);
+      saveBlob(res, `record_${profile.crn}.${format === 'excel' ? 'xlsx' : 'pdf'}`);
+      toast.success(`${format === 'excel' ? 'Excel' : 'PDF'} downloaded.`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Download failed.'));
     } finally {
-      setDownloading(false);
+      setDownloading('');
     }
   };
 
-  if (loading) return (
-    <div className="empty-state" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      <div className="spinner" style={{ width: 28, height: 28, marginBottom: 12 }} />
-      <div className="empty-state-title">Loading Intelligence Dossier...</div>
+  if (loading && !profile) return <LoadingState label="Loading record…" minHeight="50vh" />;
+  if (error || !profile) return (
+    <div>
+      <ErrorState message={error || 'Record not found.'} onRetry={fetchAll} />
+      <div style={{ textAlign: 'center' }}><Link to="/criminals" className="btn btn-secondary">Back to directory</Link></div>
     </div>
   );
 
-  if (!profile) return (
-    <div className="empty-state">
-      <User size={36} style={{ opacity: 0.3 }} />
-      <div className="empty-state-title">Dossier Not Found</div>
-      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4 }}>This record could not be located in database.</p>
-      <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => navigate('/criminals')}>
-        Back to Records Directory
-      </button>
-    </div>
-  );
-
-  const latestPred = predictions[0] ?? null;
+  const latest = predictions[0] ?? null;
   const initials = `${profile.first_name?.[0] || ''}${profile.last_name?.[0] || ''}`.toUpperCase() || 'CR';
 
   return (
     <div>
-      {/* Dossier Header */}
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="btn btn-secondary btn-icon" onClick={() => navigate('/criminals')}>
-            <ChevronLeft size={16} />
-          </button>
+          <Link to="/criminals" className="btn btn-secondary btn-icon" aria-label="Back to directory"><ChevronLeft size={16} aria-hidden="true" /></Link>
           <div>
-            <h1 className="page-title">
-              {profile.first_name} {profile.last_name}
-            </h1>
-            <p className="page-subtitle">CRN: <span className="mono">{profile.crn}</span> · {profile.crime_type || 'Unclassified'}</p>
+            <h1 className="page-title">{profile.first_name} {profile.last_name}</h1>
+            <p className="page-subtitle">CRN <span className="mono">{profile.crn}</span> · {profile.crime_type || 'Not classified'}</p>
           </div>
         </div>
-
-        <div style={{ display: 'flex', gap: 8 }}>
-          {(isAdmin || isOfficer) && (
-            <button className="btn btn-primary" onClick={handlePredict} disabled={predicting}>
-              <Brain size={14} /> {predicting ? 'Analyzing...' : 'Run Risk Assessment'}
-            </button>
+        <div className="header-actions">
+          <button type="button" className="btn btn-secondary" onClick={() => setDialog('edit')}><Edit2 size={14} aria-hidden="true" /> Edit</button>
+          <button type="button" className="btn btn-secondary" onClick={() => downloadReport('pdf')} disabled={!!downloading}>
+            <Download size={14} aria-hidden="true" /> {downloading === 'pdf' ? 'Preparing…' : 'Export PDF'}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={() => downloadReport('excel')} disabled={!!downloading}>
+            <FileText size={14} aria-hidden="true" /> {downloading === 'excel' ? 'Preparing…' : 'Export Excel'}
+          </button>
+          {(isAdmin || isClerk) && (
+            <button type="button" className="btn btn-danger" onClick={() => setDialog('delete')}><Trash2 size={14} aria-hidden="true" /> Delete</button>
           )}
-          <button className="btn btn-secondary" onClick={() => downloadReport('pdf')} disabled={downloading}>
-            <Download size={14} /> {downloading ? 'Generating...' : 'Export PDF'}
-          </button>
-          <button className="btn btn-secondary" onClick={() => downloadReport('excel')} disabled={downloading}>
-            <FileText size={14} /> Export Excel
-          </button>
         </div>
       </div>
 
-      {/* Identity Banner */}
       <div className="dossier-card">
         <div className="dossier-header">
-          <div className="dossier-avatar">{initials}</div>
+          <div className="dossier-avatar" aria-hidden="true">{initials}</div>
           <div className="dossier-info">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div className="dossier-name">{profile.first_name} {profile.last_name}</div>
-              <StatusBadge status={profile.is_wanted ? 'critical' : profile.is_incarcerated ? 'medium' : 'low'} />
+              {profile.is_wanted && <span className="badge badge-red">Wanted</span>}
+              {profile.is_incarcerated && <span className="badge badge-gray">Incarcerated</span>}
             </div>
             <div className="dossier-aliases">
-              Category: <strong style={{ color: 'var(--text-primary)' }}>{profile.crime_type || 'N/A'}</strong> · Registered: {safeDate(profile.created_at)}
+              {profile.alias ? <>Also known as <strong>{profile.alias}</strong> · </> : null}Registered {formatDate(profile.created_at)}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>
-              Calculated Threat Index
-            </div>
-            <RiskBadge score={profile.risk_score || 0} level={profile.threat_level} showBar />
+            <div className="stat-label">Officer-assessed threat level</div>
+            <StatusBadge status={profile.threat_level || 'low'} />
           </div>
         </div>
-
-        {/* Detailed Attribute Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)' }}>
-          <div>
-            <div className="form-label">Date of Birth</div>
-            <div className="td-primary">{safeDate(profile.date_of_birth)}</div>
-          </div>
-          <div>
-            <div className="form-label">Gender</div>
-            <div className="td-primary">{profile.gender || 'N/A'}</div>
-          </div>
-          <div>
-            <div className="form-label">Nationality</div>
-            <div className="td-primary">{profile.nationality || 'N/A'}</div>
-          </div>
-          <div>
-            <div className="form-label">Occupation</div>
-            <div className="td-primary">{profile.occupation || 'N/A'}</div>
-          </div>
-          <div>
-            <div className="form-label">Prior Convictions</div>
-            <div className="td-mono">{profile.prior_convictions ?? 0} Record(s)</div>
-          </div>
-          <div>
-            <div className="form-label">Gang Affiliation</div>
-            <div className="td-primary" style={{ color: profile.gang ? 'var(--status-red)' : 'var(--text-secondary)' }}>
-              {profile.gang ? `${profile.gang.name} ${profile.gang_rank ? `(${profile.gang_rank})` : ''}` : 'None'}
-            </div>
-          </div>
-        </div>
+        <dl className="detail-grid" style={{ paddingTop: 16, borderTop: '1px solid var(--border-subtle)' }}>
+          <div><dt>Date of birth</dt><dd>{formatDate(profile.date_of_birth)}</dd></div>
+          <div><dt>Gender</dt><dd>{profile.gender || '—'}</dd></div>
+          <div><dt>Nationality</dt><dd>{profile.nationality || '—'}</dd></div>
+          <div><dt>Occupation</dt><dd>{profile.occupation || '—'}</dd></div>
+          <div><dt>Prior convictions</dt><dd className="mono">{profile.prior_convictions ?? 0}</dd></div>
+          <div><dt>Gang affiliation</dt><dd>{profile.gang ? `${profile.gang.name}${profile.gang_rank ? ` (${profile.gang_rank})` : ''}` : 'None recorded'}</dd></div>
+          {profile.modus_operandi && <div style={{ gridColumn: '1 / -1' }}><dt>Modus operandi</dt><dd>{profile.modus_operandi}</dd></div>}
+        </dl>
       </div>
 
-      {/* Latest AI Assessment */}
-      {latestPred ? (
-        <div className="card">
+      {canUseAI && (
+        <section className="card" aria-labelledby="ai-heading">
           <div className="card-header">
-            <div className="card-title">
-              <Brain size={16} style={{ color: 'var(--accent-blue)' }} /> Latest Predictive Intelligence Assessment
-            </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/ai-predictions')}>
-              View All Predictions <ExternalLink size={12} />
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-            <div className="stat-card">
-              <span className="stat-label">Predicted Crime</span>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: 4 }}>
-                {latestPred.predicted_crime_type}
-              </div>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Model Confidence</span>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent-blue)', marginTop: 4 }}>
-                {latestPred.crime_type_confidence?.toFixed(1)}%
-              </div>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Gang Probability</span>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--status-amber)', marginTop: 4 }}>
-                {latestPred.gang_affiliation_probability?.toFixed(1)}%
-              </div>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Risk Rating Score</span>
-              <div style={{ marginTop: 4 }}>
-                <RiskBadge score={latestPred.risk_score} level={latestPred.risk_level} showBar />
-              </div>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Overall Model Confidence</span>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent-blue)', marginTop: 4 }}>
-                {latestPred.confidence_overall?.toFixed(1)}%
-              </div>
+            <h2 className="card-title" id="ai-heading"><Brain size={16} aria-hidden="true" style={{ color: 'var(--accent-blue)' }} /> AI decision support</h2>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={handlePredict} disabled={predicting || aiStatus?.predictions_enabled === false}>
+                <Brain size={13} aria-hidden="true" /> {predicting ? 'Running…' : 'Run assessment'}
+              </button>
+              <Link className="btn btn-ghost btn-sm" to="/ai-predictions">Review queue</Link>
             </div>
           </div>
-
-          <ExplanationPanel prediction={latestPred} />
-
-          {latestPred.input_features && (
-            <div>
-              <div className="form-label" style={{ marginBottom: 6 }}>Evaluated Feature Signals</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {Object.entries(latestPred.input_features).map(([k, v]) => (
-                  <span key={k} className="badge badge-gray" style={{ textTransform: 'none' }}>
-                    {k.replace(/_/g, ' ')}: <strong style={{ color: 'var(--text-primary)', marginLeft: 4 }}>{typeof v === 'boolean' ? (v ? 'Yes' : 'No') : v}</strong>
-                  </span>
-                ))}
+          <AIAdvisoryBanner status={aiStatus} compact={!!latest} />
+          {latest ? (
+            <>
+              <div className="stats-grid" style={{ marginTop: 12 }}>
+                <div className="stat-card"><span className="stat-label">Model's suggested category</span><div className="stat-value-sm">{latest.predicted_crime_type}</div></div>
+                <div className="stat-card"><span className="stat-label">Model score (uncalibrated)</span><div className="stat-value-sm mono">{formatScore(latest.crime_type_confidence)}</div></div>
+                <div className="stat-card"><span className="stat-label">Prototype risk score</span><div style={{ marginTop: 4 }}><RiskBadge score={latest.risk_score} level={latest.risk_level} showBar /></div></div>
+                <div className="stat-card"><span className="stat-label">Human review</span><div style={{ marginTop: 4 }}><StatusBadge status={latest.review_status} /></div></div>
               </div>
-            </div>
+              <ExplanationPanel prediction={latest} />
+            </>
+          ) : (
+            <p className="td-sub" style={{ marginTop: 12 }}>No assessment has been generated for this record.</p>
           )}
-        </div>
-      ) : (
-        (isAdmin || isOfficer) && (
-          <div className="card" style={{ textAlign: 'center', padding: '32px 20px' }}>
-            <Brain size={32} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
-            <div className="empty-state-title">No Risk Assessment Generated</div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 16 }}>
-              Run the AI prediction model to evaluate threat probabilities and gang affiliation.
-            </p>
-            <button className="btn btn-primary" onClick={handlePredict} disabled={predicting}>
-              <Brain size={14} /> {predicting ? 'Analyzing...' : 'Generate Risk Assessment'}
-            </button>
-          </div>
-        )
+        </section>
       )}
 
-      {/* History Timeline */}
-      <div className="card">
-        <div className="card-title" style={{ marginBottom: 16 }}>
-          <History size={16} style={{ color: 'var(--accent-blue)' }} /> Criminal History Event Timeline
+      <section className="card" aria-labelledby="history-heading">
+        <div className="card-header">
+          <h2 className="card-title" id="history-heading"><History size={16} aria-hidden="true" style={{ color: 'var(--accent-blue)' }} /> Record history</h2>
+          {canUseAI && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDialog('history')}><Plus size={13} aria-hidden="true" /> Add entry</button>}
         </div>
-        {history.length === 0 ? (
-          <div className="empty-state" style={{ padding: '20px 0' }}>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No historical incidents registered for this record.</div>
-          </div>
-        ) : (
-          <div style={{ position: 'relative', paddingLeft: 18 }}>
+        {history.length === 0 ? <p className="td-sub">No history entries.</p> : (
+          <ol className="timeline">
             {history.map((rec) => (
-              <div key={rec.id} style={{ paddingBottom: 16, position: 'relative', borderLeft: '2px solid var(--border)', paddingLeft: 16 }}>
-                <div style={{
-                  position: 'absolute', left: -5, top: 4, width: 8, height: 8,
-                  borderRadius: '50%', background: 'var(--accent-blue)'
-                }} />
-                <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
-                  {rec.event_type?.replace(/_/g, ' ')?.toUpperCase()}
+              <li key={rec.id}>
+                <div className="timeline-title">{humanize(rec.event_type)}</div>
+                <div className="timeline-body">{rec.description}</div>
+                <div className="timeline-meta">
+                  <span><Clock size={11} aria-hidden="true" /> {formatDate(rec.date)}</span>
+                  {rec.location && <span>{rec.location}</span>}
+                  {rec.case_reference && <span>Case {rec.case_reference}</span>}
+                  {rec.recorded_by && <span>Recorded by {rec.recorded_by}</span>}
                 </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                  {rec.description}
-                </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', gap: 12, marginTop: 4, fontFamily: 'JetBrains Mono, monospace' }}>
-                  <span><Clock size={11} /> {safeDate(rec.date)}</span>
-                  {rec.location && <span>📍 {rec.location}</span>}
-                  {rec.case_reference && <span>Case: {rec.case_reference}</span>}
-                </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ol>
         )}
-      </div>
+      </section>
+
+      {dialog === 'edit' && <EditModal profile={profile} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); fetchAll(); }} />}
+      {dialog === 'history' && <HistoryModal criminalId={id} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); fetchAll(); }} />}
+      {dialog === 'delete' && (
+        <ConfirmDialog title="Delete record" danger requireReason confirmLabel="Delete permanently"
+          message="Records linked to cases or with AI assessments cannot be deleted; correct them instead. Deletion is audited."
+          onCancel={() => setDialog(null)}
+          onConfirm={async (reason) => {
+            try {
+              await criminalsAPI.delete(id, reason);
+              toast.success('Record deleted.');
+              navigate('/criminals');
+            } catch (err) {
+              toast.error(getErrorMessage(err));
+            }
+          }} />
+      )}
     </div>
   );
 }

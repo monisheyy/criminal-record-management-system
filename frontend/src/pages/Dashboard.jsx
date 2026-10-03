@@ -1,258 +1,245 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { adminAPI } from '../services/api';
 import toast from 'react-hot-toast';
-import { useAuth } from '../contexts/AuthContext';
 import {
-  Chart as ChartJS, CategoryScale, LinearScale, BarElement,
-  Title, Tooltip, Legend, ArcElement, LineElement, PointElement
+  ArcElement, BarElement, CategoryScale, Chart as ChartJS, Filler, Legend, LinearScale, LineElement, PointElement,
+  Tooltip,
 } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import {
-  Shield, FileText, AlertTriangle, Brain, Users, Siren,
-  Activity, Plus, FolderPlus, Download
+  Activity, AlertTriangle, Brain, FileText, Gauge, Shield, Siren, Users,
 } from 'lucide-react';
+import { adminAPI, getErrorMessage, saveBlob } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
+import { ErrorState, LoadingState } from '../components/ui';
 
-ChartJS.register(
-  CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend,
-  ArcElement, LineElement, PointElement
-);
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, LineElement, PointElement, Filler, Tooltip, Legend);
 
-const CHART_DEFAULTS = {
+const ACCENT = '#0071E3';
+const QUIET = '#D2D2D7';
+const STATUS_COLORS = { open: '#0071E3', under_investigation: '#FF9F0A', closed: '#34C759', archived: '#C7C7CC' };
+const FONT = { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', size: 12 };
+
+const baseOptions = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: {
-      labels: { color: '#475467', font: { family: 'Inter', size: 11 } }
-    }
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: 'rgba(29,29,31,0.92)', titleFont: { ...FONT, weight: '600' }, bodyFont: FONT,
+      padding: 10, cornerRadius: 10, displayColors: false,
+    },
   },
   scales: {
-    x: { ticks: { color: '#98A2B3', font: { size: 10, family: 'Inter' } }, grid: { color: '#F2F4F7' } },
-    y: { ticks: { color: '#98A2B3', font: { size: 10, family: 'Inter' } }, grid: { color: '#F2F4F7' } }
-  }
+    x: { ticks: { color: '#86868B', font: FONT }, grid: { display: false }, border: { display: false } },
+    y: { ticks: { color: '#86868B', font: FONT, precision: 0 }, grid: { color: '#F0F0F2' }, border: { display: false } },
+  },
 };
 
+function greeting(now = new Date()) {
+  const h = now.getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
 function StatCard({ icon: Icon, value, label, subtext, onClick }) {
+  const clickable = Boolean(onClick);
+  const Tag = clickable ? 'button' : 'div';
   return (
-    <div className="stat-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
+    <Tag type={clickable ? 'button' : undefined} className="stat-card" onClick={onClick}
+      style={{ cursor: clickable ? 'pointer' : 'default', textAlign: 'left', font: 'inherit', width: '100%' }}>
       <div className="stat-card-header">
         <span className="stat-label">{label}</span>
-        <div className="stat-icon"><Icon size={14} /></div>
+        <span className="stat-icon" aria-hidden="true"><Icon size={18} strokeWidth={1.6} /></span>
       </div>
-      <div className="stat-value">{value?.toLocaleString?.() ?? value ?? 0}</div>
-      {subtext && <div className="stat-subtext">{subtext}</div>}
-    </div>
+      <div className="stat-value">{(value ?? 0).toLocaleString()}</div>
+      <div className="stat-subtext">{subtext}</div>
+    </Tag>
   );
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, isAdmin, isOfficer, isClerk } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setError('');
     adminAPI.dashboard()
-      .then(r => setStats(r.data))
-      .catch(() => {})
+      .then((r) => setStats(r.data))
+      .catch((err) => setError(getErrorMessage(err, 'Failed to load dashboard statistics.')))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { load(); }, []);
 
   const exportAnalytics = async (format) => {
     try {
       const res = format === 'excel' ? await adminAPI.dashboardExcel() : await adminAPI.dashboardPdf();
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `ai_crms_dashboard_analytics.${format === 'excel' ? 'xlsx' : 'pdf'}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      saveBlob(res, `ai_crms_dashboard_analytics.${format === 'excel' ? 'xlsx' : 'pdf'}`);
       toast.success(`${format === 'excel' ? 'Excel' : 'PDF'} analytics exported.`);
     } catch (err) {
-      toast.error(`Failed to export ${format === 'excel' ? 'Excel' : 'PDF'} analytics.`);
+      toast.error(getErrorMessage(err, `Failed to export ${format === 'excel' ? 'Excel' : 'PDF'} analytics.`));
     }
   };
 
-  if (loading) return (
-    <div className="empty-state" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      <div className="spinner" style={{ marginBottom: 10 }} />
-      <div className="empty-state-title">Loading Command Center Data...</div>
-    </div>
-  );
+  if (loading) return <LoadingState label="Loading dashboard…" minHeight="50vh" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
-  const crimeTypes = stats?.crimes_by_type || {};
-  const caseStatuses = stats?.cases_by_status || {};
+  const crimeEntries = Object.entries(stats?.crimes_by_type || {}).sort(([, a], [, b]) => b - a).slice(0, 8);
+  const statusEntries = Object.entries(stats?.cases_by_status || {});
+  const monthly = stats?.monthly_cases || [];
+  const workload = stats?.officer_workload || [];
+  const totalCases = statusEntries.reduce((sum, [, v]) => sum + v, 0);
+  const agreement = stats?.reviewed_predictions ? stats.reviewer_agreement_rate : null;
+  const firstName = user?.full_name?.split(' ')[0] || user?.username;
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  const barData = {
-    labels: Object.keys(crimeTypes).slice(0, 8),
+  const lineData = {
+    labels: monthly.map((m) => m.month),
     datasets: [{
-      label: 'Criminals',
-      data: Object.values(crimeTypes).slice(0, 8),
-      backgroundColor: '#2563EB',
-      borderColor: '#1D4ED8',
-      borderWidth: 0,
-      borderRadius: 6,
-    }]
+      label: 'Cases filed',
+      data: monthly.map((m) => m.cases),
+      borderColor: ACCENT,
+      borderWidth: 2,
+      tension: 0.35,
+      fill: true,
+      backgroundColor: (ctx) => {
+        const { chart } = ctx;
+        if (!chart.chartArea) return 'rgba(0,113,227,0.08)';
+        const g = chart.ctx.createLinearGradient(0, chart.chartArea.top, 0, chart.chartArea.bottom);
+        g.addColorStop(0, 'rgba(0,113,227,0.14)');
+        g.addColorStop(1, 'rgba(0,113,227,0)');
+        return g;
+      },
+      pointRadius: 0, pointHoverRadius: 5, pointBackgroundColor: ACCENT, pointBorderColor: '#fff', pointBorderWidth: 2,
+    }],
   };
 
-  const statusColors = {
-    open: '#2563EB',
-    under_investigation: '#D97706',
-    closed: '#16A34A',
-    archived: '#98A2B3',
+  const barData = {
+    labels: crimeEntries.map(([k]) => k),
+    datasets: [{
+      data: crimeEntries.map(([, v]) => v),
+      backgroundColor: crimeEntries.map((_, i) => (i === 0 ? ACCENT : QUIET)),
+      borderRadius: 6, borderSkipped: false, barThickness: 12,
+    }],
   };
 
   const doughnutData = {
-    labels: Object.keys(caseStatuses).map(s => s.replace('_', ' ')),
+    labels: statusEntries.map(([s]) => s.replace('_', ' ')),
     datasets: [{
-      data: Object.values(caseStatuses),
-      backgroundColor: Object.keys(caseStatuses).map(s => statusColors[s] || '#98A2B3'),
-      borderWidth: 0,
-    }]
-  };
-
-  const lineData = {
-    labels: (stats?.monthly_cases || []).map(m => m.month),
-    datasets: [{
-      label: 'Cases Filed',
-      data: (stats?.monthly_cases || []).map(m => m.cases),
-      borderColor: '#2563EB',
-      backgroundColor: 'rgba(37, 99, 235, 0.05)',
-      fill: true,
-      tension: 0.2,
-      pointBackgroundColor: '#2563EB',
-      pointRadius: 3,
-    }]
+      data: statusEntries.map(([, v]) => v),
+      backgroundColor: statusEntries.map(([s]) => STATUS_COLORS[s] || '#94A3B8'),
+      borderWidth: 3, borderColor: '#fff', hoverOffset: 6,
+    }],
   };
 
   const officerData = {
-    labels: (stats?.officer_workload || []).map(o => o.officer.split(' ').slice(-1)[0]),
+    labels: workload.map((o) => o.officer.split(' ').slice(-1)[0]),
     datasets: [{
-      label: 'Active Cases',
-      data: (stats?.officer_workload || []).map(o => o.cases),
-      backgroundColor: '#6366F1',
-      borderColor: '#4F46E5',
-      borderWidth: 0,
-      borderRadius: 6,
-    }]
+      data: workload.map((o) => o.cases),
+      backgroundColor: ACCENT, hoverBackgroundColor: '#0077ED',
+      borderRadius: 6, borderSkipped: false, maxBarThickness: 28,
+    }],
   };
 
   return (
     <div>
-      <div className="page-header">
+      <section className="hero" aria-label="Overview">
         <div>
-          <h1 className="page-title">Command Center</h1>
-          <p className="page-subtitle">Welcome back, {user?.full_name}</p>
+          <div className="hero-eyebrow">{today}</div>
+          <h1 className="hero-title">{greeting()}, {firstName}</h1>
+          <p className="hero-sub">
+            {stats.open_cases} open investigation{stats.open_cases === 1 ? '' : 's'}. {stats.total_criminals} offender records.
+            
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={() => exportAnalytics('pdf')}>
-            <Download size={14} /> Export PDF
-          </button>
-          <button className="btn btn-secondary" onClick={() => exportAnalytics('excel')}>
-            <Download size={14} /> Export Excel
-          </button>
-          <button className="btn btn-secondary" onClick={() => navigate('/criminals')}>
-            <Plus size={14} /> Add Offender
-          </button>
-          <button className="btn btn-primary" onClick={() => navigate('/cases')}>
-            <FolderPlus size={14} /> New Case
-          </button>
+        <div className="hero-actions">
+          <button type="button" className="btn btn-secondary" onClick={() => exportAnalytics('pdf')}>Export PDF</button>
+          <button type="button" className="btn btn-secondary" onClick={() => exportAnalytics('excel')}>Export Excel</button>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/criminals')}>Add offender</button>
+          {(isAdmin || isOfficer) && (
+            <button type="button" className="btn btn-primary" onClick={() => navigate('/cases')}>New case</button>
+          )}
         </div>
-      </div>
+      </section>
 
-      {/* High-Risk Banner */}
-      {stats?.high_risk_criminals > 0 && (
-        <div className="alert alert-error" style={{ justifyContent: 'space-between', padding: '12px 16px', marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <AlertTriangle size={16} />
-            <div>
-              <div style={{ fontWeight: 600 }}>
-                {stats.high_risk_criminals} High-Risk Criminal Profiles Flagged
-              </div>
-              <div style={{ fontSize: '0.75rem', opacity: 0.85, marginTop: 1 }}>
-                {stats.pending_reviews} AI risk predictions pending review
-              </div>
-            </div>
-          </div>
-          <button className="btn btn-danger btn-sm" onClick={() => navigate('/alerts')}>
-            Review Flags
-          </button>
+      {!isClerk && stats.pending_reviews > 0 && (
+        <div className="notice-row" role="status">
+          <span>
+            <strong>{stats.pending_reviews} AI output{stats.pending_reviews === 1 ? '' : 's'} awaiting review.</strong>{' '}
+            Model outputs stay advisory until someone records a reasoned decision.
+          </span>
+          <button type="button" className="notice-link" onClick={() => navigate('/ai-predictions')}>Review now ›</button>
         </div>
       )}
 
-      {/* Barometer KPI Grid */}
-      <div className="stats-grid">
-        <StatCard icon={Shield} value={stats?.total_criminals} label="Offender Dossiers" subtext="Registered profiles" onClick={() => navigate('/criminals')} />
-        <StatCard icon={FileText} value={stats?.total_cases} label="Total Cases" subtext="FIR & case files" onClick={() => navigate('/cases')} />
-        <StatCard icon={Activity} value={stats?.open_cases} label="Open Cases" subtext="Active investigations" onClick={() => navigate('/cases?status=open')} />
-        <StatCard icon={AlertTriangle} value={stats?.high_risk_criminals} label="High Risk" subtext="Critical threat rating" onClick={() => navigate('/alerts')} />
-        <StatCard icon={Brain} value={stats?.pending_reviews} label="AI Reviews" subtext="Pending officer action" onClick={() => navigate('/ai-predictions')} />
-        <StatCard icon={Siren} value={stats?.unread_alerts} label="Alerts" subtext="Unread operational flags" onClick={() => navigate('/alerts')} />
+      <div className="stats-grid kpi-grid">
+        <StatCard icon={Shield} value={stats.total_criminals} label="Offender records" subtext="Registered profiles" onClick={() => navigate('/criminals')} />
+        <StatCard icon={FileText} value={stats.total_cases} label="Total cases" subtext="FIR & case files" onClick={() => navigate('/cases')} />
+        <StatCard icon={Activity} value={stats.open_cases} label="Open cases" subtext="Awaiting investigation" onClick={() => navigate('/cases?status=open')} />
+        <StatCard icon={AlertTriangle} value={stats.high_risk_criminals} label="High risk" subtext="Officer-recorded score ≥ 75" onClick={() => navigate('/criminals?sort=-prior_convictions')} />
+        <StatCard icon={Brain} value={stats.pending_reviews} label="AI reviews" subtext="Pending human decision" onClick={isClerk ? undefined : () => navigate('/ai-predictions')} />
+        <StatCard icon={Siren} value={stats.unread_alerts} label="Unread alerts" subtext="Operational flags for you" onClick={() => navigate('/alerts')} />
       </div>
 
-      {/* Model Precision Rating & Trend Line */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: 16, marginBottom: 20 }}>
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', margin: 0 }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 8 }}>
-            Model Precision Rating
+      <div className="dashboard-split">
+        <div className="card chart-card" style={{ margin: 0, textAlign: 'center' }}>
+          <div className="card-title" style={{ justifyContent: 'center' }}><Gauge size={16} aria-hidden="true" /> Reviewer agreement</div>
+          <div className="gauge" style={{ '--value': agreement ?? 0 }} role="img"
+            aria-label={agreement == null ? 'No reviewed AI outputs yet' : `Reviewers confirmed ${agreement}% of reviewed AI outputs`}>
+            <div className="gauge-inner"><span className="gauge-value">{agreement == null ? '—' : `${agreement}%`}</span></div>
           </div>
-          <div style={{ fontSize: '2.4rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--status-emerald)', lineHeight: 1 }}>
-            {stats?.prediction_accuracy ?? 0}%
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8 }}>
-            Verified by officer feedback
-          </div>
+          <p className="td-sub" style={{ marginTop: 12, maxWidth: 240, marginInline: 'auto' }}>
+            Share of {stats.reviewed_predictions} reviewed AI outputs that reviewers confirmed. Not a measure of model accuracy.
+          </p>
         </div>
 
-        <div className="card" style={{ margin: 0 }}>
-          <div className="card-title" style={{ marginBottom: 12 }}>
-            <Activity size={15} style={{ color: 'var(--accent-blue)' }} /> Monthly Case Filings
-          </div>
-          <div style={{ height: 130 }}>
-            <Line data={lineData} options={{ ...CHART_DEFAULTS, plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } } }} />
+        <div className="card chart-card" style={{ margin: 0 }}>
+          <div className="card-title"><Activity size={16} aria-hidden="true" /> Case filings</div>
+          <div className="chart-sub">New case files per month, last six months</div>
+          <div style={{ height: 190 }} role="img" aria-label={`Monthly case filings: ${monthly.map((m) => `${m.month} ${m.cases}`).join(', ')}`}>
+            <Line data={lineData} options={baseOptions} />
           </div>
         </div>
       </div>
 
-      {/* Visual Analytics Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-        <div className="card" style={{ margin: 0 }}>
-          <div className="card-title" style={{ marginBottom: 12 }}>
-            <Shield size={15} style={{ color: 'var(--accent-blue)' }} /> Offence Distribution
-          </div>
-          <div style={{ height: 200 }}>
-            <Bar data={barData} options={{
-              ...CHART_DEFAULTS,
-              indexAxis: 'y',
-              plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } }
-            }} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+        <div className="card chart-card" style={{ margin: 0 }}>
+          <div className="card-title"><Shield size={16} aria-hidden="true" /> Offence distribution</div>
+          <div className="chart-sub">Records by primary offence (top 8)</div>
+          <div style={{ height: 240 }} role="img" aria-label={`Offence distribution: ${crimeEntries.map(([k, v]) => `${k} ${v}`).join(', ')}`}>
+            <Bar data={barData} options={{ ...baseOptions, indexAxis: 'y', scales: {
+              x: { ...baseOptions.scales.y }, y: { ...baseOptions.scales.x, ticks: { ...baseOptions.scales.x.ticks, color: '#424245' } },
+            } }} />
           </div>
         </div>
 
-        <div className="card" style={{ margin: 0 }}>
-          <div className="card-title" style={{ marginBottom: 12 }}>
-            <FileText size={15} style={{ color: 'var(--accent-blue)' }} /> Case Status Breakdown
-          </div>
-          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="card chart-card" style={{ margin: 0 }}>
+          <div className="card-title"><FileText size={16} aria-hidden="true" /> Case status</div>
+          <div className="chart-sub">{totalCases} case files by lifecycle stage</div>
+          <div style={{ height: 240, position: 'relative' }} role="img"
+            aria-label={`Case status: ${statusEntries.map(([k, v]) => `${k.replace('_', ' ')} ${v}`).join(', ')}`}>
             <Doughnut data={doughnutData} options={{
-              ...CHART_DEFAULTS,
-              cutout: '75%',
-              scales: undefined
+              ...baseOptions, scales: undefined, cutout: '72%',
+              plugins: { ...baseOptions.plugins, legend: { display: true, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 14, color: '#424245', font: FONT } } },
             }} />
+            <div style={{ position: 'absolute', inset: '0 0 44px 0', display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div className="gauge-value">{totalCases}</div>
+                <div className="td-sub">cases</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="card" style={{ margin: 0 }}>
-          <div className="card-title" style={{ marginBottom: 12 }}>
-            <Users size={15} style={{ color: 'var(--accent-blue)' }} /> Officer Workload
-          </div>
-          <div style={{ height: 200 }}>
-            <Bar data={officerData} options={{
-              ...CHART_DEFAULTS,
-              plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } }
-            }} />
+        <div className="card chart-card" style={{ margin: 0 }}>
+          <div className="card-title"><Users size={16} aria-hidden="true" /> Officer workload</div>
+          <div className="chart-sub">Active (open + under investigation) cases per officer</div>
+          <div style={{ height: 240 }} role="img" aria-label={`Active cases per officer: ${workload.map((o) => `${o.officer} ${o.cases}`).join(', ')}`}>
+            <Bar data={officerData} options={baseOptions} />
           </div>
         </div>
       </div>

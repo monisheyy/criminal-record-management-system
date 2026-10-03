@@ -6,7 +6,33 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 )
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _generated_stamp() -> str:
+    """Report timestamps are always UTC and labelled, so readers in other zones aren't misled."""
+    return datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+
+
+def _pct(value) -> str:
+    """Format a model score stored as a 0-1 fraction (legacy rows may hold 0-100)."""
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return "N/A"
+    if number <= 1.0:
+        number *= 100
+    return f"{number:.1f}%"
+
+
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _excel_safe(value):
+    """Neutralise spreadsheet formula injection (CWE-1236) in exported cells."""
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
 import io
 
 
@@ -94,7 +120,7 @@ def generate_criminal_report(criminal_data: dict, predictions: list = None) -> b
         ('ROUNDEDCORNERS', [6, 6, 6, 6]),
     ]))
     story.append(header_table)
-    story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  CONFIDENTIAL", _sub_header_style()))
+    story.append(Paragraph(f"Generated: {_generated_stamp()}  |  By: {criminal_data.get('generated_by', 'N/A')}  |  CONFIDENTIAL", _sub_header_style()))
     story.append(Spacer(1, 0.4*cm))
 
     # Risk alert banner
@@ -195,9 +221,9 @@ def generate_criminal_report(criminal_data: dict, predictions: list = None) -> b
 
         for pred in predictions[:3]:
             pred_data = [
-                ['Predicted Crime', pred.get('predicted_crime_type', 'N/A'), 'Confidence', f"{pred.get('crime_type_confidence', 0):.1f}%"],
+                ['Predicted Crime', pred.get('predicted_crime_type', 'N/A'), 'Confidence', _pct(pred.get('crime_type_confidence', 0))],
                 ['Risk Score', f"{pred.get('risk_score', 0):.1f}/100", 'Risk Level', pred.get('risk_level', 'N/A').upper()],
-                ['Gang Probability', f"{pred.get('gang_affiliation_probability', 0):.1f}%", 'Status', pred.get('review_status', 'pending').upper()],
+                ['Gang Probability', _pct(pred.get('gang_affiliation_probability', 0)), 'Status', pred.get('review_status', 'pending').upper()],
             ]
             pred_table = Table(pred_data, colWidths=[3.5*cm, 5*cm, 3.5*cm, 5*cm])
             pred_table.setStyle(TableStyle([
@@ -244,7 +270,7 @@ def generate_case_report(case_data: dict) -> bytes:
         ('BOTTOMPADDING', (0, 0), (-1, -1), 14),
     ]))
     story.append(header_table)
-    story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  CONFIDENTIAL", _sub_header_style()))
+    story.append(Paragraph(f"Generated: {_generated_stamp()}  |  By: {case_data.get('generated_by', 'N/A')}  |  CONFIDENTIAL", _sub_header_style()))
     story.append(Spacer(1, 0.4*cm))
 
     # Case Details
@@ -393,7 +419,7 @@ def _write_sheet(wb, title, headers, rows):
         ws.delete_rows(1, 1)
     ws.append(headers)
     for row in rows:
-        ws.append(row)
+        ws.append([_excel_safe(cell) for cell in row])
     _style_excel_sheet(ws)
     return ws
 
@@ -401,10 +427,12 @@ def _write_sheet(wb, title, headers, rows):
 def generate_criminal_excel(criminal_data: dict) -> bytes:
     wb = _excel_workbook()
     _write_sheet(wb, 'Criminal Profile',
-        ['CRN', 'Name', 'Crime Category', 'Prior Convictions', 'Gang', 'Risk Score', 'Prediction', 'Confidence'],
+        ['CRN', 'Name', 'Crime Category', 'Prior Convictions', 'Gang', 'Risk Score',
+         'AI Prediction (unverified)', 'Model Score', 'Review Status', 'Generated (UTC)'],
         [[criminal_data.get('crn', 'N/A'), criminal_data.get('name', 'N/A'), criminal_data.get('crime_category', 'N/A'),
           criminal_data.get('prior_convictions', 0), criminal_data.get('gang_name', 'None'), criminal_data.get('risk_score', 0),
-          criminal_data.get('prediction', 'N/A'), criminal_data.get('confidence', 0)]])
+          criminal_data.get('prediction') or 'Not included', _pct(criminal_data.get('confidence', 0)) if criminal_data.get('prediction') else 'N/A',
+          criminal_data.get('prediction_review_status') or 'N/A', _generated_stamp()]])
 
     cases = criminal_data.get('cases', [])
     _write_sheet(wb, 'Cases', ['Case Number', 'Status', 'Crime Type', 'Role'], [
@@ -451,7 +479,8 @@ def generate_analytics_excel(analytics: dict) -> bytes:
         ['High Risk Criminals', analytics.get('high_risk_criminals', 0)],
         ['Pending AI Reviews', analytics.get('pending_reviews', 0)],
         ['Unread Alerts', analytics.get('unread_alerts', 0)],
-        ['Prediction Accuracy (%)', analytics.get('prediction_accuracy', 0)],
+        ['Reviewer Agreement Rate (%) - not model accuracy', analytics.get('reviewer_agreement_rate', analytics.get('prediction_accuracy', 0))],
+        ['Generated (UTC)', _generated_stamp()],
     ])
     _write_sheet(wb, 'Cases by Status', ['Status', 'Count'], [[k, v] for k, v in analytics.get('cases_by_status', {}).items()])
     _write_sheet(wb, 'Crimes by Type', ['Crime Type', 'Count'], [[k, v] for k, v in analytics.get('crimes_by_type', {}).items()])
@@ -466,13 +495,13 @@ def generate_analytics_report(analytics: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
     story = [Paragraph('AI-CRMS — Dashboard Analytics Report', _header_style()),
-             Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | CONFIDENTIAL", _sub_header_style()), Spacer(1, 0.4*cm)]
+             Paragraph(f"Generated: {_generated_stamp()} | CONFIDENTIAL", _sub_header_style()), Spacer(1, 0.4*cm)]
     story.append(Paragraph('Key Performance Indicators', _section_style()))
     kpis = [
         ['Total Criminals', analytics.get('total_criminals', 0)], ['Total Cases', analytics.get('total_cases', 0)],
         ['Open Cases', analytics.get('open_cases', 0)], ['High Risk Criminals', analytics.get('high_risk_criminals', 0)],
         ['Pending AI Reviews', analytics.get('pending_reviews', 0)], ['Unread Alerts', analytics.get('unread_alerts', 0)],
-        ['Prediction Accuracy', f"{analytics.get('prediction_accuracy', 0)}%"],
+        ['Reviewer Agreement Rate*', f"{analytics.get('reviewer_agreement_rate', analytics.get('prediction_accuracy', 0))}%"],
     ]
     t = Table(kpis, colWidths=[8*cm, 8*cm])
     t.setStyle(TableStyle([('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('ROWBACKGROUNDS',(0,0),(-1,-1),[LIGHT_GRAY,WHITE]),('GRID',(0,0),(-1,-1),0.5,MID_GRAY),('FONTSIZE',(0,0),(-1,-1),9),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
@@ -489,5 +518,8 @@ def generate_analytics_report(analytics: dict) -> bytes:
     mt = Table(rows, colWidths=[11*cm,5*cm])
     mt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),DARK_BLUE),('TEXTCOLOR',(0,0),(-1,0),WHITE),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('GRID',(0,0),(-1,-1),0.5,MID_GRAY),('ROWBACKGROUNDS',(0,1),(-1,-1),[LIGHT_GRAY,WHITE])]))
     story.append(mt)
+    story.append(Spacer(1, 0.4*cm))
+    story.append(Paragraph('* Share of human-reviewed AI predictions that reviewers confirmed. This measures reviewer '
+                           'agreement, not model accuracy, and is not evidence of real-world predictive validity.', _body_style()))
     doc.build(story)
     return buffer.getvalue()

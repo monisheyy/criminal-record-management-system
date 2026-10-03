@@ -4,7 +4,7 @@ These tests intentionally exercise persisted entities and authorization boundari
 not merely application startup or HTTP status codes.
 """
 from datetime import datetime, timedelta, timezone
-from jose import jwt
+import jwt
 
 from app import models
 from app.security import SECRET_KEY, ALGORITHM
@@ -60,6 +60,8 @@ def test_criminal_crud_and_duplicate_search(client, admin_token):
     assert any(x["id"] == c["id"] for x in r.json())
 
     r = client.delete(f"/api/criminals/{c['id']}", headers=auth(admin_token))
+    assert r.status_code == 422, "deletion must require a documented reason"
+    r = client.delete(f"/api/criminals/{c['id']}", params={"reason": "Created in error during QA"}, headers=auth(admin_token))
     assert r.status_code == 200
     assert client.get(f"/api/criminals/{c['id']}", headers=auth(admin_token)).status_code == 404
 

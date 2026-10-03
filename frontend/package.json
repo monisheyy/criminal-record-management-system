@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test tests/critical-workflows.test.mjs"
+    "test": "node --test tests/utils.test.mjs tests/critical-workflows.test.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "axios": "^1.20.0",
@@ -22,6 +23,7 @@
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",

@@ -1,6 +1,14 @@
 """
 AI-CRMS Synthetic Demo Data Seeder
-Populates the database with realistic demo data for all entities.
+
+Populates an EMPTY development database with fictional demo data.
+
+* Never runs in production (APP_ENV=production refuses SEED_DEMO_DATA=true).
+* Demo accounts use published passwords, so every one is flagged
+  must_change_password and production start-up deactivates any account that
+  still uses one of them.
+* AI predictions are left PENDING: the seeder never fabricates human review
+  decisions or audit history.
 """
 import sys
 import os
@@ -12,6 +20,10 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine, Base
 from app import models
 from app.security import get_password_hash
+import logging
+
+# Plain-ASCII log output: emoji in print() crashed start-up on non-UTF-8 consoles.
+log = logging.getLogger("ai_crms.seed")
 
 CRIME_TYPES = [
     'Robbery', 'Assault', 'Murder', 'Drug Trafficking', 'Burglary',
@@ -144,10 +156,10 @@ def random_past(max_days=365 * 3):
 
 
 def seed_database(db: Session):
-    print("🌱 Seeding AI-CRMS database...")
+    log.info("Seeding AI-CRMS database...")
 
     # ── Users ────────────────────────────────────────────────────────────────
-    print("  Creating users...")
+    log.info("  Creating users...")
     users_data = [
         {'username': 'admin', 'email': 'admin@acrms.gov', 'full_name': 'System Administrator',
          'role': models.UserRole.admin, 'badge_number': 'ADM-001', 'department': 'Administration',
@@ -180,16 +192,17 @@ def seed_database(db: Session):
             department=u['department'],
             hashed_password=get_password_hash(u['password']),
             is_active=True,
+            must_change_password=True,
         )
         db.add(user)
         created_users.append(user)
     db.commit()
     for u in created_users:
         db.refresh(u)
-    print(f"  ✓ Created {len(created_users)} users")
+    log.info(f"  Created {len(created_users)} users")
 
     # ── Gangs ─────────────────────────────────────────────────────────────────
-    print("  Creating gangs...")
+    log.info("  Creating gangs...")
     created_gangs = []
     for g in GANG_DATA:
         gang = models.Gang(
@@ -207,10 +220,10 @@ def seed_database(db: Session):
     db.commit()
     for g in created_gangs:
         db.refresh(g)
-    print(f"  ✓ Created {len(created_gangs)} gangs")
+    log.info(f"  Created {len(created_gangs)} gangs")
 
     # ── Core Criminals ────────────────────────────────────────────────────────
-    print("  Creating criminals...")
+    log.info("  Creating criminals...")
     created_criminals = []
     import string
 
@@ -281,10 +294,10 @@ def seed_database(db: Session):
     db.commit()
     for c in created_criminals:
         db.refresh(c)
-    print(f"  ✓ Created {len(created_criminals)} criminals")
+    log.info(f"  Created {len(created_criminals)} criminals")
 
     # ── Criminal History ──────────────────────────────────────────────────────
-    print("  Creating criminal histories...")
+    log.info("  Creating criminal histories...")
     event_types = ['arrest', 'conviction', 'release', 'bail_granted', 'wanted_notice', 'sighting', 'associate_link']
     for criminal in created_criminals[:15]:
         n_events = random.randint(2, 6)
@@ -300,10 +313,10 @@ def seed_database(db: Session):
                 recorded_by=random.choice([u.full_name for u in created_users[:3]]),
             ))
     db.commit()
-    print("  ✓ Created criminal histories")
+    log.info("  Created criminal histories")
 
     # ── Cases ─────────────────────────────────────────────────────────────────
-    print("  Creating cases...")
+    log.info("  Creating cases...")
     import string as str_mod
     officers = [u for u in created_users if u.role == models.UserRole.investigating_officer]
 
@@ -385,10 +398,10 @@ def seed_database(db: Session):
                 )
                 db.add(cc)
     db.commit()
-    print(f"  ✓ Created {len(created_cases)} cases")
+    log.info(f"  Created {len(created_cases)} cases")
 
     # ── Evidence ──────────────────────────────────────────────────────────────
-    print("  Creating evidence...")
+    log.info("  Creating evidence...")
     evidence_types = ['physical', 'digital', 'forensic', 'witness', 'documentary']
     for case, _ in created_cases[:8]:
         for j in range(random.randint(1, 4)):
@@ -411,10 +424,10 @@ def seed_database(db: Session):
             )
             db.add(ev)
     db.commit()
-    print("  ✓ Created evidence records")
+    log.info("  Created evidence records")
 
     # ── Victims ───────────────────────────────────────────────────────────────
-    print("  Creating victims...")
+    log.info("  Creating victims...")
     for case, _ in created_cases[:6]:
         for j in range(random.randint(1, 3)):
             victim = models.Victim(
@@ -437,14 +450,13 @@ def seed_database(db: Session):
             )
             db.add(victim)
     db.commit()
-    print("  ✓ Created victims")
+    log.info("  Created victims")
 
     # ── AI Predictions ────────────────────────────────────────────────────────
-    print("  Creating AI predictions...")
+    log.info("  Creating AI predictions...")
     from app.ml.pipeline import get_pipeline
     pipeline = get_pipeline()
 
-    review_statuses = ['confirmed', 'confirmed', 'confirmed', 'rejected', 'overridden', 'pending', 'pending']
 
     for i, criminal in enumerate(created_criminals[:12]):
         criminal_data = {
@@ -473,38 +485,29 @@ def seed_database(db: Session):
             g = next((g for g in created_gangs if g.name == result['predicted_gang']), None)
             gang_id = g.id if g else None
 
-        review_status = random.choice(review_statuses)
-        reviewer = random.choice(officers)
-
+        # Stored in the same units the API writes (0-1 fractions) and left
+        # pending: review decisions must come from real human reviewers.
         prediction = models.AIPrediction(
             criminal_id=criminal.id,
             predicted_crime_type=result['predicted_crime_type'],
-            crime_type_confidence=result['crime_type_confidence'],
-            gang_affiliation_probability=result['gang_affiliation_probability'],
+            crime_type_confidence=result['crime_type_confidence'] / 100.0,
+            gang_affiliation_probability=result['gang_affiliation_probability'] / 100.0,
             predicted_gang_id=gang_id,
             risk_score=result['risk_score'],
             risk_level=result['risk_level'],
-            confidence_overall=result['confidence_overall'],
+            confidence_overall=result['confidence_overall'] / 100.0,
             similar_criminals=similar,
             input_features=result.get('input_features'),
-            review_status=review_status,
-            reviewed_by_id=reviewer.id if review_status != 'pending' else None,
-            reviewed_at=random_past(90) if review_status != 'pending' else None,
-            officer_remarks=(
-                "Prediction aligns with known criminal profile." if review_status == 'confirmed'
-                else "Insufficient evidence to support this classification." if review_status == 'rejected'
-                else "Override: Based on field intelligence, corrected crime type." if review_status == 'overridden'
-                else None
-            ),
-            model_version='v1.0',
+            review_status='pending',
+            model_version=pipeline.model_version,
         )
         db.add(prediction)
 
     db.commit()
-    print("  ✓ Created AI predictions")
+    log.info("  Created AI predictions")
 
     # ── Notifications ─────────────────────────────────────────────────────────
-    print("  Creating notifications...")
+    log.info("  Creating notifications...")
     notifications_data = [
         {'title': '🚨 HIGH-RISK ALERT: Marcus Vega', 'message': 'Risk score 92.5/100 — CRITICAL. Immediate review required.',
          'type': 'alert', 'role': 'admin'},
@@ -512,11 +515,11 @@ def seed_database(db: Session):
          'type': 'alert', 'role': 'investigating_officer'},
         {'title': '⚠ Duplicate Record Detected', 'message': 'Possible duplicate entry for Dmitri Volkov. Please review.',
          'type': 'warning', 'role': 'record_clerk'},
-        {'title': '✅ Case Closed: Arms Cache Discovery', 'message': 'Case CASE/2023/384920 has been successfully closed.',
+        {'title': 'Case Closed: Arms Cache Discovery', 'message': 'Case CASE/2023/384920 has been successfully closed.',
          'type': 'success', 'role': None},
-        {'title': '📋 New Case Assigned', 'message': 'Operation Shadow Strike assigned to Inspector Rajesh Kumar.',
+        {'title': 'New Case Assigned', 'message': 'Operation Shadow Strike assigned to Inspector Rajesh Kumar.',
          'type': 'info', 'role': 'investigating_officer'},
-        {'title': '🤖 AI Model Retrained', 'message': 'Crime classifier updated. Accuracy: 87.4%. Please review pending predictions.',
+        {'title': '🤖 Demo model candidate available', 'message': 'A demo model candidate is available. It was trained on synthetic data; see Model Governance for its real evaluation metrics.',
          'type': 'info', 'role': 'admin'},
         {'title': '⚠ Wanted Suspect Sighted', 'message': 'Sofia Reyes reported sighted at Harbor Front. Alert issued.',
          'type': 'alert', 'role': 'investigating_officer'},
@@ -534,39 +537,17 @@ def seed_database(db: Session):
         )
         db.add(notif)
     db.commit()
-    print("  ✓ Created notifications")
+    log.info("  Created notifications")
 
     # ── Audit Logs ────────────────────────────────────────────────────────────
-    print("  Creating audit logs...")
-    audit_actions = [
-        ('USER_LOGIN', 'auth', None),
-        ('CRIMINAL_CREATED', 'criminal', 1),
-        ('CASE_CREATED', 'case', 1),
-        ('AI_PREDICTION_RUN', 'ai_prediction', 1),
-        ('OFFICER_ASSIGNED', 'case', 2),
-        ('AI_PREDICTION_CONFIRMED', 'ai_prediction', 2),
-        ('CRIMINAL_UPDATED', 'criminal', 3),
-        ('CASE_UPDATED', 'case', 3),
-        ('MODEL_RETRAINED', 'ml_model', 1),
-        ('USER_CREATED', 'user', 5),
-    ]
-
-    for action, resource, res_id in audit_actions:
-        user = random.choice(created_users)
-        db.add(models.AuditLog(
-            user_id=user.id,
-            username=user.username,
-            action=action,
-            resource_type=resource,
-            resource_id=res_id,
-            details={'timestamp': str(random_past(30)), 'ip': f"192.168.1.{random.randint(1,254)}"},
-            ip_address=f"192.168.1.{random.randint(1,254)}",
-        ))
-    db.commit()
-    print("  ✓ Created audit logs")
+    # A single honest audit event; the seeder never fabricates user activity.
+    from app.utils.audit import create_audit_log
+    create_audit_log(db, "DEMO_DATA_SEEDED", username="system", resource_type="database",
+                     reason="Fictional demo data loaded into an empty development database",
+                     details={"users": len(created_users)})
 
     # ── ML Model Record ───────────────────────────────────────────────────────
-    print("  Creating ML model record...")
+    log.info("  Creating ML model record...")
     ml_meta = pipeline.get_metadata()
     crime_meta = ml_meta.get('crime_classifier', {})
     db.add(models.MLModel(
@@ -585,6 +566,8 @@ def seed_database(db: Session):
             "dataset_type": ml_meta.get("dataset", {}).get("dataset_type"),
             "dataset_version": ml_meta.get("dataset", {}).get("dataset_version"),
             "dataset_sha256": ml_meta.get("dataset", {}).get("sha256"),
+            "quality_gate": ml_meta.get("quality_gate"),
+            "candidate_status": "active",
         },
         dataset_version=ml_meta.get("dataset", {}).get("dataset_version"),
         evaluation_method=ml_meta.get("evaluation_method"),
@@ -594,18 +577,23 @@ def seed_database(db: Session):
                f"dataset_sha256={ml_meta.get('dataset', {}).get('sha256', 'unknown')}"),
     ))
     db.commit()
-    print("  ✓ ML model record created")
+    log.info("  ML model record created")
 
-    print("\n✅ Database seeded successfully!")
-    print("\n📋 Demo Credentials:")
-    print("  Admin:    admin / admin123")
-    print("  Officer1: officer1 / officer123")
-    print("  Officer2: officer2 / officer123")
-    print("  Clerk:    clerk1 / clerk123")
+    log.info("\nDatabase seeded successfully!")
+    log.info("\nDemo credentials (development only; a password change is forced at first sign-in):")
+    log.info("  Admin:    admin / admin123")
+    log.info("  Officer1: officer1 / officer123")
+    log.info("  Officer2: officer2 / officer123")
+    log.info("  Clerk:    clerk1 / clerk123")
 
 
 if __name__ == "__main__":
-    Base.metadata.create_all(bind=engine)
+    from app.config import settings
+    from app.db_bootstrap import migrate_database
+
+    if settings.is_production:
+        raise SystemExit("Refusing to seed demo data with APP_ENV=production")
+    migrate_database(engine, allow_auto_upgrade=True)
     db = SessionLocal()
     try:
         seed_database(db)

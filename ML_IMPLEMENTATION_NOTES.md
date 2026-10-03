@@ -1,3 +1,5 @@
+> **Note (Oct 2026):** activation now also requires a passing quality gate and a written justification, artifacts are signed and verified before loading, and rollback is supported. See [docs/MODEL_CARD.md](docs/MODEL_CARD.md) and [docs/AUDIT_REMEDIATION.md](docs/AUDIT_REMEDIATION.md).
+
 # AI-CRMS ML Safety and Evaluation Update
 
 ## Scope
