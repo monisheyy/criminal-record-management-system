@@ -511,6 +511,11 @@ class CRMSMLPipeline:
         self.integrity: Dict[str, Any] = {"status": "unknown", "verified": False}
         self._load_or_train()
 
+    def _imputes_missing(self) -> bool:
+        """True when the loaded models were trained with median imputers, so
+        unrecorded inputs should reach them as NaN, exactly as in training."""
+        return self.imputer is not None and getattr(self, "gang_imputer", None) is not None
+
     def _transform_features(self, X: np.ndarray) -> np.ndarray:
         X_array = np.asarray(X, dtype=float)
         if self.imputer is not None:
@@ -809,7 +814,7 @@ class CRMSMLPipeline:
             self._load_or_train()
 
         self._validate_risk_inputs(criminal_data)
-        features = self._extract_features(criminal_data)
+        features = self._extract_features(criminal_data, impute_missing=self._imputes_missing())
         feature_quality = self._feature_input_quality(criminal_data)
         X_scaled = self._transform_features(np.array([features], dtype=float))
 
@@ -921,11 +926,18 @@ class CRMSMLPipeline:
         importances = np.asarray(self.crime_classifier.feature_importances_, dtype=float)
         total = float(importances.sum()) or 1.0
         relative = importances / total
+        # Unrecorded inputs are NaN here; report the training median the model
+        # actually used in their place, and flag them as imputed.
+        medians = getattr(self.imputer, "statistics_", None)
         rows = []
-        for name, value, importance in zip(FEATURE_COLUMNS, features, relative):
+        for index, (name, value, importance) in enumerate(zip(FEATURE_COLUMNS, features, relative)):
+            imputed = not np.isfinite(value)
+            if imputed:
+                value = medians[index] if medians is not None and np.isfinite(medians[index]) else 0.0
             rows.append({
                 "feature": name,
                 "value": round(float(value), 4),
+                "imputed": bool(imputed),
                 "relative_importance": round(float(importance), 6),
             })
         rows.sort(key=lambda item: (-item["relative_importance"], item["feature"]))
@@ -995,25 +1007,38 @@ class CRMSMLPipeline:
             "warning": "Low input coverage means predictions may be unreliable. Confidence values are model scores, not validated real-world probabilities." if len(covered) < len(FEATURE_COLUMNS) else None,
         }
 
-    def _extract_features(self, data: Dict) -> List[float]:
+    @staticmethod
+    def _extract_features(data: Dict, impute_missing: bool = False) -> List[float]:
         """Build inference features only from observed inputs, never from the target.
 
         The previous implementation inferred weapons/drug/financial/technology
         features from ``crime_type``. Since crime_type is the prediction target in
         the crime classifier, that created target leakage and made inference depend
-        on the answer it was supposed to predict. Missing fields use documented,
-        conservative defaults; callers can provide explicit feature values when
-        those observations are available.
+        on the answer it was supposed to predict.
+
+        Unrecorded fields use documented, conservative defaults. With
+        ``impute_missing=True`` they are NaN instead, so a model trained with a
+        median imputer sees unrecorded inputs exactly as it did in training
+        (blank CSV cells), rather than a default that reads as an explicit "no".
+        The training-data exporter uses the same mode, so its rows match inference.
         """
-        age = 30
+        missing = np.nan if impute_missing else None
+        age: float = 30 if missing is None else missing
         if data.get("date_of_birth"):
             try:
                 dob_value = data["date_of_birth"]
                 dob = (datetime.fromisoformat(dob_value.replace("Z", "+00:00"))
                        if isinstance(dob_value, str) else dob_value)
-                age = (RISK_REFERENCE_DATE - dob.replace(tzinfo=None).date()).days // 365
+                # Age at the incident when its date is known, so training rows
+                # (historical incidents) and live predictions measure the same thing.
+                as_of = RISK_REFERENCE_DATE
+                incident = data.get("incident_date")
+                if incident:
+                    as_of = (datetime.fromisoformat(incident.replace("Z", "+00:00"))
+                             if isinstance(incident, str) else incident).date()
+                age = (as_of - dob.replace(tzinfo=None).date()).days // 365
             except (TypeError, ValueError, AttributeError):
-                age = 30
+                pass
         elif data.get("age") is not None:
             try:
                 age = int(data["age"])
@@ -1023,32 +1048,46 @@ class CRMSMLPipeline:
                 raise ValueError("age must be between 16 and 100")
 
         def numeric(name: str, default: float, low: float, high: float) -> float:
-            raw = data.get(name, default)
+            raw = data.get(name)
+            if raw in (None, ""):
+                return default
             try:
-                value = float(default if raw in (None, "") else raw)
+                value = float(raw)
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"{name} must be numeric") from exc
             if not np.isfinite(value) or value < low or value > high:
                 raise ValueError(f"{name} must be between {low} and {high}")
             return value
 
-        prior = numeric("prior_convictions", 0.0, 0.0, 100.0)
-        gang_member = data.get("is_gang_member", bool(data.get("gang_id")))
-        if not isinstance(gang_member, (bool, np.bool_, int, np.integer, float, np.floating)) or gang_member not in (0, 1, False, True):
-            raise ValueError("is_gang_member must be boolean or 0/1")
-        associates_default = min(len([x for x in (data.get("known_associates") or "").split(",") if x.strip()]), 15)
+        def fallback(value: float) -> float:
+            return value if missing is None else missing
+
+        prior = numeric("prior_convictions", fallback(0.0), 0.0, 100.0)
+        if "is_gang_member" in data or "gang_id" in data or missing is None:
+            gang_member = data.get("is_gang_member", bool(data.get("gang_id")))
+            if not isinstance(gang_member, (bool, np.bool_, int, np.integer, float, np.floating)) or gang_member not in (0, 1, False, True):
+                raise ValueError("is_gang_member must be boolean or 0/1")
+            gang_feature = float(bool(gang_member))
+        else:
+            gang_feature = missing  # no offender record: membership is unknown, not "no"
+        if data.get("known_associates") is not None or missing is None:
+            associates_default = float(min(len([x for x in (data.get("known_associates") or "").split(",") if x.strip()]), 15))
+        else:
+            associates_default = missing
+        incident_hour = CRMSMLPipeline._incident_hour(data, default=-1)
+        hour_default = float(incident_hour) if incident_hour >= 0 else fallback(12.0)
         return [
             prior,
-            float(max(16, min(70, age))),
-            float(bool(gang_member)),
-            numeric("weapons_involved", 0.0, 0.0, 1.0),
-            numeric("drug_involvement", 0.0, 0.0, 1.0),
-            numeric("financial_motivation", 0.0, 0.0, 1.0),
-            numeric("tech_involvement", 0.0, 0.0, 1.0),
-            numeric("violence_history", 0.0, 0.0, 100.0),
-            numeric("location_risk", 0.3, 0.0, 1.0),
-            numeric("time_of_crime", float(self._incident_hour(data, default=12)), 0.0, 23.0),
-            numeric("associates_count", float(associates_default), 0.0, 1000.0),
+            float(max(16, min(70, age))) if np.isfinite(age) else age,
+            gang_feature,
+            numeric("weapons_involved", fallback(0.0), 0.0, 1.0),
+            numeric("drug_involvement", fallback(0.0), 0.0, 1.0),
+            numeric("financial_motivation", fallback(0.0), 0.0, 1.0),
+            numeric("tech_involvement", fallback(0.0), 0.0, 1.0),
+            numeric("violence_history", fallback(0.0), 0.0, 100.0),
+            numeric("location_risk", fallback(0.3), 0.0, 1.0),
+            numeric("time_of_crime", hour_default, 0.0, 23.0),
+            numeric("associates_count", associates_default, 0.0, 1000.0),
         ]
 
     @staticmethod
@@ -1164,7 +1203,7 @@ class CRMSMLPipeline:
             return []
 
         try:
-            target_raw = np.asarray(self._extract_features(criminal_data), dtype=float).reshape(1, -1)
+            target_raw = np.asarray(self._extract_features(criminal_data, impute_missing=self._imputes_missing()), dtype=float).reshape(1, -1)
             target_vector = self._transform_features(target_raw)[0]
         except (TypeError, ValueError, OverflowError):
             return []
@@ -1175,7 +1214,7 @@ class CRMSMLPipeline:
             if criminal.get("id") is not None and criminal.get("id") == criminal_data.get("id"):
                 continue
             try:
-                candidate_raw = np.asarray(self._extract_features(criminal), dtype=float).reshape(1, -1)
+                candidate_raw = np.asarray(self._extract_features(criminal, impute_missing=self._imputes_missing()), dtype=float).reshape(1, -1)
                 candidate_vector = self._transform_features(candidate_raw)[0]
                 similarity = self._cosine_similarity(target_vector, candidate_vector)
                 matching_features = self._matching_features(target_raw[0], candidate_raw[0])
