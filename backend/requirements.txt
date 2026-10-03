@@ -1,21 +1,20 @@
-fastapi>=0.100.0
-uvicorn[standard]>=0.20.0
-sqlalchemy>=2.0.0
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-bcrypt>=4.0.0
-python-multipart>=0.0.9
+# Runtime dependencies, pinned to the versions the test suite is verified on.
+# Update deliberately (see docs/OPERATIONS.md "Dependency updates"), then run
+# the full test suite and `pip-audit -r requirements.txt` before merging.
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+SQLAlchemy==2.0.35
+alembic==1.14.0
+pydantic==2.9.2
+email-validator==2.3.0
+PyJWT==2.15.1
+bcrypt==4.2.0
+python-multipart==0.0.32
+python-dotenv==1.2.4
 scikit-learn==1.8.0
-numpy
-scipy
-reportlab
-python-dateutil
-Faker
-aiofiles
-httpx
-python-dotenv
-pytest
-pytest-asyncio
-
+numpy==2.1.1
+scipy==1.14.1
+reportlab==4.2.2
+openpyxl==3.1.5
+# PostgreSQL driver for production deployments (unused with SQLite).
+psycopg[binary]==3.2.3

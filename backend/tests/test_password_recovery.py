@@ -4,7 +4,7 @@ These tests use the real API flow and monkeypatch the provider in environments
 where the project's full authentication dependencies are installed.
 """
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -28,7 +28,7 @@ def test_otp_is_six_digits_and_hashed():
 def test_expired_challenge_is_rejected(client, db_session):
     user = models.User(username="recovery_user", email="recovery@example.com", full_name="Recovery User", hashed_password=get_password_hash("oldpassword"), role=models.UserRole.record_clerk, is_active=True)
     db_session.add(user); db_session.commit()
-    challenge = models.PasswordRecovery(user_id=user.id, request_ip="127.0.0.1", otp_hash=hash_secret("123456"), otp_expires_at=datetime.utcnow() - timedelta(seconds=1), max_attempts=5)
+    challenge = models.PasswordRecovery(user_id=user.id, request_ip="127.0.0.1", otp_hash=hash_secret("123456"), otp_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1), max_attempts=5)
     db_session.add(challenge); db_session.commit()
     response = client.post("/api/auth/password-recovery/verify", json={"identifier": "recovery_user", "otp": "123456"})
     assert response.status_code == 400
@@ -37,7 +37,7 @@ def test_expired_challenge_is_rejected(client, db_session):
 def test_wrong_otp_increments_attempts(client, db_session):
     user = models.User(username="attempt_user", email="attempt@example.com", full_name="Attempt User", hashed_password=get_password_hash("oldpassword"), role=models.UserRole.record_clerk, is_active=True)
     db_session.add(user); db_session.commit()
-    challenge = models.PasswordRecovery(user_id=user.id, request_ip="127.0.0.1", otp_hash=hash_secret("123456"), otp_expires_at=datetime.utcnow() + timedelta(minutes=5), max_attempts=2)
+    challenge = models.PasswordRecovery(user_id=user.id, request_ip="127.0.0.1", otp_hash=hash_secret("123456"), otp_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5), max_attempts=2)
     db_session.add(challenge); db_session.commit()
     for _ in range(2):
         response = client.post("/api/auth/password-recovery/verify", json={"identifier": "attempt_user", "otp": "999999"})
@@ -52,7 +52,7 @@ def test_password_reset_invalidates_old_password(client, db_session):
     new = "newpassword123"
     user = models.User(username="reset_user", email="reset@example.com", full_name="Reset User", hashed_password=get_password_hash(old), role=models.UserRole.record_clerk, is_active=True)
     db_session.add(user); db_session.commit()
-    challenge = models.PasswordRecovery(user_id=user.id, request_ip="127.0.0.1", otp_hash=hash_secret("123456"), otp_expires_at=datetime.utcnow() + timedelta(minutes=5), max_attempts=5)
+    challenge = models.PasswordRecovery(user_id=user.id, request_ip="127.0.0.1", otp_hash=hash_secret("123456"), otp_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5), max_attempts=5)
     db_session.add(challenge); db_session.commit()
     with patch("app.routers.auth.generate_reset_token", return_value="r" * 43):
         response = client.post("/api/auth/password-recovery/verify", json={"identifier": "reset_user", "otp": "123456"})

@@ -1,32 +1,36 @@
 # AI-CRMS Verification Status
 
-## Verified in the packaging environment
+Last verified: 2 October 2026, Windows 11, Python 3.13, Node 24, on branch `audit-remediation`.
 
-- ML pipeline unit tests: **24 passed** when run in isolation from the application-wide pytest `conftest.py`.
-- Frontend critical-workflow tests: **5 passed**.
-- Python syntax compilation and ML evaluation smoke test: passed in the prior implementation pass.
-- ZIP archive integrity: verified after packaging.
+## Results
 
-## Still unverified
+| Check | Command | Result |
+|---|---|---|
+| Backend tests (fresh virtualenv from `requirements-dev.txt`) | `cd backend; pytest -q` | **213 passed** |
+| Python dependency vulnerabilities | `pip-audit -r requirements-dev.txt` | **No known vulnerabilities** (19 found and fixed during remediation) |
+| Migrations | `alembic upgrade head` → `downgrade base` → `upgrade head` → `alembic check` | Pass, no model/migration drift |
+| Existing database upgrade | migrated a copy of the project's `acrms.db` | Pass: data intact, confidences normalised, 8 legacy reviews preserved, all endpoints 200 |
+| Frontend lint | `npm run lint` | 0 errors (remaining warnings are the standard fetch-in-effect pattern) |
+| Frontend unit/contract tests | `npm test` | **19 passed** |
+| Frontend production build | `npm run build` | Pass (initial bundle 340 KB, was 661 KB) |
+| npm dependency vulnerabilities | `npm audit` | **0 vulnerabilities** |
+| End-to-end (real browser + real API) | `PW_CHANNEL=msedge npm run test:e2e` | **6 passed** |
+| Release hygiene | `python scripts/package_release.py --check` | Pass |
 
-- Full backend test suite / app integration tests.
-- Frontend production bundle (`vite build`).
+## Not verified here
 
-The packaging environment has no working package-registry network access. The full backend test collection stops at `ModuleNotFoundError: No module named 'jose'` (the `python-jose` dependency), and pip cannot retrieve it. The frontend build stops at `vite: not found`; `npm ci --offline` confirms the required Vite package is not cached. These are environment dependency blockers, not evidence that the tests or build pass.
+* **Docker images / `docker compose`** — Docker is not installed in this environment; the Dockerfiles, nginx config and compose file are written but have not been built or run.
+* **GitHub Actions CI** — the workflow runs once the branch is pushed to GitHub.
+* **PostgreSQL** — the code, driver, migrations and audit triggers support it, but the test suite ran on SQLite.
+* **Manual accessibility audit** with a screen reader.
 
-## Run full verification on Windows
+## Reproduce
 
-1. Open PowerShell in the extracted project directory.
-2. Activate the project's Python virtual environment, or create one with `python -m venv .venv` and activate it using `.\.venv\Scripts\Activate.ps1`.
-3. Ensure internet/package registry access is available.
-4. Run:
+```powershell
+.\VERIFY_AI_CRMS.ps1          # dependencies, audits, backend tests, migrations, lint, unit tests, build, hygiene
+cd frontend; npm run test:e2e # add $env:PW_CHANNEL='msedge' to use the installed Edge instead of downloading Chromium
+```
 
-   ```powershell
-   .\VERIFY_AI_CRMS.ps1
-   ```
+## Model caveat
 
-The script installs the backend dependencies from `backend/requirements.txt`, compiles Python files, runs backend tests, installs the frontend dependencies from `frontend/package-lock.json`, runs frontend tests, and builds the production bundle. Review any application-specific test failures rather than treating dependency installation alone as verification.
-
-## Important model caveat
-
-The current ML evaluation uses synthetic/demo data and is not evidence of real-world validity. Do not use its outputs to make or justify real-world criminal-justice decisions. Train and validate against lawfully obtained, representative, quality-controlled data and require appropriate human review before any operational use.
+The ML evaluation uses synthetic demonstration data and is not evidence of real-world validity. Production configuration disables synthetic models. See [docs/MODEL_CARD.md](docs/MODEL_CARD.md).

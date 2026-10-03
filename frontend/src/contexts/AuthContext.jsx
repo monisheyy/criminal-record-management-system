@@ -1,36 +1,54 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authAPI } from '../services/api';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
+import { authAPI, onSessionEvent } from '../services/api';
 
 const AuthContext = createContext(null);
 
+/**
+ * The session lives in an HttpOnly cookie the browser manages; this context
+ * only keeps the *user profile* in memory and re-validates it with /me on
+ * load. Nothing authentication-related is written to localStorage.
+ */
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('acrms_token');
-    const savedUser = localStorage.getItem('acrms_user');
-    if (token && savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch {}
-    }
-    setLoading(false);
+    // Clean up tokens left behind by older versions of the app.
+    try { localStorage.removeItem('acrms_token'); localStorage.removeItem('acrms_user'); } catch { /* storage unavailable */ }
+    authAPI.me()
+      .then((res) => setUser(res.data))
+      // Keep any user set by a login that finished while this check was in flight.
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => onSessionEvent((type) => {
+    if (type === 'expired') {
+      setUser((current) => {
+        if (current) toast.error('Your session has ended. Please sign in again.', { id: 'session-expired' });
+        return null;
+      });
+    }
+    if (type === 'password-change-required') {
+      setUser((current) => (current ? { ...current, must_change_password: true } : current));
+    }
+  }), []);
 
   const login = useCallback(async (username, password) => {
     const res = await authAPI.login(username, password);
-    const { access_token, user: userData } = res.data;
-    localStorage.setItem('acrms_token', access_token);
-    localStorage.setItem('acrms_user', JSON.stringify(userData));
-    setUser(userData);
-    return userData;
+    setUser(res.data.user);
+    return res.data.user;
+  }, []);
+
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    const res = await authAPI.changePassword(currentPassword, newPassword);
+    setUser(res.data.user);
+    return res.data.user;
   }, []);
 
   const logout = useCallback(async () => {
-    try { await authAPI.logout(); } catch {}
-    localStorage.removeItem('acrms_token');
-    localStorage.removeItem('acrms_user');
+    try { await authAPI.logout(); } catch { /* the server clears the cookie; nothing else to do */ }
     setUser(null);
   }, []);
 
@@ -40,12 +58,13 @@ export function AuthProvider({ children }) {
   const canEdit = isAdmin || isOfficer || isClerk;
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, isAdmin, isOfficer, isClerk, canEdit }}>
+    <AuthContext.Provider value={{ user, login, logout, changePassword, loading, isAdmin, isOfficer, isClerk, canEdit }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
