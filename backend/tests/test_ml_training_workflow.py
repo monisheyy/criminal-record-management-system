@@ -17,10 +17,12 @@ def _bearer(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _write_dated_copy(tmp_path, *, extra_header=("incident_date", "slice_district"), blank_date_row=None):
-    """Copy the demo dataset, appending an incident date and a district slice."""
+def _write_dated_copy(tmp_path, *, extra_header=("incident_date", "slice_district"), blank_date_row=None, limit=None):
+    """Copy the demo dataset's schema columns, appending an incident date and a district slice."""
     with ml.DATASET_PATH.open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.reader(handle))
+        rows = [row[:13] for row in csv.reader(handle)]
+    if limit is not None:
+        rows = rows[:limit + 1]
     start = datetime(2020, 1, 1, tzinfo=timezone.utc)
     out = tmp_path / "dated.csv"
     with out.open("w", newline="", encoding="utf-8") as handle:
@@ -97,7 +99,7 @@ def _manifest_args(dataset, **overrides):
 def test_build_manifest_records_hash_and_refuses_unsafe_labels(tmp_path):
     from app.ml.build_manifest import BUNDLED_DEMO_DATASET, build_manifest
 
-    dataset = _write_dated_copy(tmp_path)
+    dataset = _write_dated_copy(tmp_path, limit=600)
     manifest = build_manifest(_manifest_args(dataset))
     assert manifest["sha256"] == ml._dataset_sha256(dataset)
     assert manifest["dataset_type"] == "authorized_historical"

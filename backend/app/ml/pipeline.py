@@ -26,8 +26,9 @@ import numpy as np
 import sklearn
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import make_scorer, accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+from sklearn.metrics import brier_score_loss, make_scorer, roc_auc_score, accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit, cross_validate, train_test_split
 from sklearn.pipeline import Pipeline as SklearnPipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -43,7 +44,7 @@ DATA_DIR = BASE_DIR / "data"
 # Point AI_CRMS_DATASET_PATH at an approved dataset to train on real data. Its
 # manifest is read from AI_CRMS_DATASET_MANIFEST, else from the
 # dataset_manifest.json next to the CSV (build one with app.ml.build_manifest).
-DATASET_PATH = Path(os.getenv("AI_CRMS_DATASET_PATH") or (DATA_DIR / "demo_crime_training_v1.csv")).resolve()
+DATASET_PATH = Path(os.getenv("AI_CRMS_DATASET_PATH") or (DATA_DIR / "india_crime_training_v1.csv")).resolve()
 MANIFEST_PATH = Path(os.getenv("AI_CRMS_DATASET_MANIFEST") or (DATASET_PATH.parent / "dataset_manifest.json")).resolve()
 METADATA_PATH = MODEL_DIR / "metadata.json"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -100,13 +101,16 @@ TARGET_COLUMNS = ["crime_type", "gang_label"]
 #    for per-slice error analysis in subgroup_evaluation.
 DATE_COLUMN = "incident_date"
 SLICE_PREFIX = "slice_"
+#  - reoffended_2y (0/1) is an observed outcome (re-arrested within two years
+#    of the incident). When present, a learned danger-score model is trained on
+#    it; otherwise the fixed-weight prototype score is used.
+OUTCOME_COLUMN = "reoffended_2y"
 # Case fields recorded by officers that map 1:1 onto model features.
 CASE_INCIDENT_FEATURES = ("weapons_involved", "drug_involvement", "financial_motivation", "tech_involvement")
 # Dataset types whose models may be trained and evaluated but never activated.
 UNVALIDATED_DATASET_TYPES = frozenset({"synthetic_demonstration", "unknown", "external"})
 
-from app.constants import CRIME_CATEGORIES, CRIME_TYPES  # noqa: E402  (single source of truth)
-GANG_NAMES = ["Shadow Syndicate", "Red Serpents", "Iron Fist", "Night Wolves", "Black Eagles"]
+from app.constants import CRIME_CATEGORIES, CRIME_TYPES, GANG_NAMES  # noqa: E402  (single source of truth)
 EXPECTED_CRIMES = set(CRIME_TYPES)
 EXPECTED_GANGS = set(GANG_NAMES) | {"None"}
 
@@ -354,15 +358,17 @@ def load_training_dataset(
         expected_columns = FEATURE_COLUMNS + TARGET_COLUMNS
         fieldnames = list(reader.fieldnames or [])
         extra_columns = fieldnames[len(expected_columns):]
-        bad_extra = [name for name in extra_columns if name != DATE_COLUMN and not (
+        bad_extra = [name for name in extra_columns if name not in (DATE_COLUMN, OUTCOME_COLUMN) and not (
             name.startswith(SLICE_PREFIX) and len(name) > len(SLICE_PREFIX))]
         if (fieldnames[:len(expected_columns)] != expected_columns or bad_extra
                 or len(set(fieldnames)) != len(fieldnames)):
             raise DatasetValidationError(
                 f"Dataset columns do not match schema. Expected {expected_columns} optionally followed by "
-                f"'{DATE_COLUMN}' and '{SLICE_PREFIX}*' columns, got {reader.fieldnames}"
+                f"'{DATE_COLUMN}', '{OUTCOME_COLUMN}' and '{SLICE_PREFIX}*' columns, got {reader.fieldnames}"
             )
         has_dates = DATE_COLUMN in extra_columns
+        has_outcome = OUTCOME_COLUMN in extra_columns
+        outcomes: List[int] = []
         slice_columns = [name for name in extra_columns if name.startswith(SLICE_PREFIX)]
 
         rows: List[List[float]] = []
@@ -402,6 +408,13 @@ def load_training_dataset(
                 incident_dates.append(_parse_incident_date(raw_date, row_number))
             for name in slice_columns:
                 slice_values[name[len(SLICE_PREFIX):]].append((row.get(name) or "").strip())
+            if has_outcome:
+                raw_outcome = (row.get(OUTCOME_COLUMN) or "").strip()
+                if raw_outcome not in ("0", "1"):
+                    raise DatasetValidationError(
+                        f"Dataset row {row_number}: '{OUTCOME_COLUMN}' must be 0 or 1 when the column is present"
+                    )
+                outcomes.append(int(raw_outcome))
 
     if not rows:
         raise DatasetValidationError("Training dataset is empty")
@@ -454,7 +467,10 @@ def load_training_dataset(
         "sha256": _dataset_sha256(path),
         "has_incident_dates": has_dates,
         "slice_columns": sorted(slice_values),
+        "has_outcome": has_outcome,
     }
+    if has_outcome:
+        metadata["outcome_rate"] = round(float(np.mean(outcomes)), 4)
     if has_dates:
         metadata["incident_date_range"] = [
             datetime.fromtimestamp(min(incident_dates), timezone.utc).isoformat(),
@@ -465,6 +481,7 @@ def load_training_dataset(
     context = {
         "incident_dates": np.asarray(incident_dates, dtype=float) if has_dates else None,
         "slices": {name: np.asarray(values, dtype=str) for name, values in slice_values.items()},
+        "outcome": np.asarray(outcomes, dtype=int) if has_outcome else None,
     }
     return X, y_crime, y_gang, metadata, context
 
@@ -490,6 +507,51 @@ def crime_estimator() -> RandomForestClassifier:
     return RandomForestClassifier(n_estimators=150, max_depth=10, random_state=RANDOM_SEED, class_weight="balanced")
 
 
+def risk_estimator() -> SklearnPipeline:
+    """Danger-score model: logistic regression on the shared features.
+
+    Chosen over a forest because its probabilities are naturally well
+    calibrated and each person's score splits exactly into per-feature
+    contributions (coefficient x standardised value), which the UI shows.
+    """
+    return SklearnPipeline([
+        ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
+        ("scaler", StandardScaler()),
+        ("model", LogisticRegression(max_iter=2000, C=1.0)),
+    ])
+
+
+RISK_LEVEL_BANDS = (("low", 0, 35), ("medium", 35, 55), ("high", 55, 75), ("critical", 75, 101))
+
+
+def risk_model_metrics(y_true: np.ndarray, proba: np.ndarray, training_samples: int) -> Dict[str, Any]:
+    """Holdout evaluation of the danger-score model.
+
+    ``level_outcome_rates`` is the observed outcome rate inside each risk level:
+    for a trustworthy score it rises steeply from low to critical.
+    """
+    y_true = np.asarray(y_true, dtype=int)
+    proba = np.asarray(proba, dtype=float)
+    scores = np.clip(1.0 + 99.0 * proba, 1.0, 100.0)
+    levels = {}
+    for name, low, high in RISK_LEVEL_BANDS:
+        mask = (scores >= low) & (scores < high)
+        levels[name] = {"samples": int(mask.sum()),
+                        "observed_rate": round(float(y_true[mask].mean()), 4) if mask.any() else None}
+    both_classes = len(np.unique(y_true)) == 2
+    return {
+        "target": OUTCOME_COLUMN,
+        "training_samples": int(training_samples),
+        "test_samples": int(len(y_true)),
+        "base_rate": round(float(y_true.mean()), 4),
+        "roc_auc": round(float(roc_auc_score(y_true, proba)), 4) if both_classes else None,
+        "brier_score": round(float(brier_score_loss(y_true, proba)), 4),
+        "accuracy_at_0_5": round(float(np.mean((proba >= 0.5) == y_true)), 4),
+        "calibration": expected_calibration_error(y_true, np.column_stack([1.0 - proba, proba])),
+        "level_outcome_rates": levels,
+    }
+
+
 def calibration_method() -> str:
     if CALIBRATION_METHOD not in CALIBRATION_METHODS:
         raise ValueError(f"AI_CRMS_CALIBRATION must be one of {CALIBRATION_METHODS}, got {CALIBRATION_METHOD!r}")
@@ -505,6 +567,7 @@ class CRMSMLPipeline:
         self.imputer: Optional[SimpleImputer] = None
         self.scaler = StandardScaler()
         self.crime_calibrator: Optional[CalibratedClassifierCV] = None
+        self.risk_model: Optional[SklearnPipeline] = None
         self.model_version = "v1.0"
         self.is_trained = False
         self.training_metadata: Dict[str, Any] = {}
@@ -670,6 +733,22 @@ class CRMSMLPipeline:
         self.gang_imputer = gang_imputer
         self.gang_scaler = gang_scaler
 
+        # Learned danger score, when the dataset carries an observed outcome.
+        # Same holdout rows as the crime model, so it is judged on unseen cases.
+        self.risk_model = None
+        risk_metrics = None
+        outcome = context.get("outcome")
+        if outcome is not None:
+            outcome = np.asarray(outcome, dtype=int)
+            if len(outcome) != len(X):
+                raise DatasetValidationError(f"{OUTCOME_COLUMN} must have one value per row")
+            if len(np.unique(outcome[crime_train_idx])) == 2:
+                self.risk_model = risk_estimator().fit(X[crime_train_idx], outcome[crime_train_idx])
+                risk_metrics = risk_model_metrics(
+                    outcome[crime_test_idx], self.risk_model.predict_proba(X[crime_test_idx])[:, 1],
+                    len(crime_train_idx),
+                )
+
         feature_importances = {
             feature: round(float(value), 8)
             for feature, value in zip(FEATURE_COLUMNS, self.crime_classifier.feature_importances_)
@@ -702,6 +781,8 @@ class CRMSMLPipeline:
             "gang_predictor": gang_metrics,
             "feature_importances": feature_importances,
             "risk_score_config": RISK_SCORE_CONFIG,
+            "risk_score_method": "learned_logistic_regression" if self.risk_model is not None else "fixed_weight_prototype",
+            "risk_model": risk_metrics,
             "risk_level_thresholds": {"medium": 35, "high": 55, "critical": 75},
             "risk_score_disclaimer": "Prototype decision-support score; not clinically or legally validated.",
             "quality_gate": evaluate_quality_gate(crime_metrics),
@@ -721,6 +802,7 @@ class CRMSMLPipeline:
             "dataset": dataset_meta,
             "evaluation_method": self.training_metadata["evaluation_method"],
             "quality_gate": self.training_metadata["quality_gate"],
+            "risk_model": risk_metrics,
         }
 
     @staticmethod
@@ -853,7 +935,11 @@ class CRMSMLPipeline:
             else:
                 gang_affiliation_prob = gang_confidence if is_gang_affiliated else 0.0
 
-        risk_score, risk_factors = self._calculate_risk_score(criminal_data, crime_confidence, gang_affiliation_prob)
+        if self.risk_model is not None:
+            self._validate_risk_inputs(criminal_data)
+            risk_score, risk_factors = self._learned_risk_score(features)
+        else:
+            risk_score, risk_factors = self._calculate_risk_score(criminal_data, crime_confidence, gang_affiliation_prob)
         risk_level = self._risk_level(risk_score)
 
         overall_confidence = crime_confidence if not gang_prediction_available else (crime_confidence + gang_confidence) / 2
@@ -891,11 +977,7 @@ class CRMSMLPipeline:
                 ),
                 "calibration_warning": self._calibration_warning(),
                 "risk_factors": risk_factors,
-                "risk_score_method": {
-                    "type": "deterministic_weighted_prototype",
-                    "weights": RISK_SCORE_CONFIG,
-                    "disclaimer": "Prototype decision-support score; not clinically or legally validated.",
-                },
+                "risk_score_method": self._risk_score_method(),
                 "explanation": explanation,
             },
         }
@@ -954,6 +1036,58 @@ class CRMSMLPipeline:
             "all_features": rows,
             "interpretation": "Important model features indicate relative model importance; they do not establish that a feature caused the prediction.",
         }
+
+    FEATURE_LABELS = {
+        "prior_convictions": "Prior convictions", "age": "Age at incident", "is_gang_member": "Gang membership",
+        "weapons_involved": "Weapon involved", "drug_involvement": "Drug involvement",
+        "financial_motivation": "Financial motive", "tech_involvement": "Technology used",
+        "violence_history": "Violence history", "location_risk": "Location risk",
+        "time_of_crime": "Hour of incident", "associates_count": "Known associates",
+    }
+
+    def _risk_score_method(self) -> Dict[str, Any]:
+        if self.risk_model is not None:
+            metrics = self.training_metadata.get("risk_model") or {}
+            return {
+                "type": "learned_logistic_regression",
+                "target": OUTCOME_COLUMN,
+                "holdout_roc_auc": metrics.get("roc_auc"),
+                "disclaimer": ("Learned from the training data's re-arrest outcome. Its accuracy holds only for "
+                               "people like those in that data; not a legal or clinical risk assessment."),
+            }
+        return {
+            "type": "deterministic_weighted_prototype",
+            "weights": RISK_SCORE_CONFIG,
+            "disclaimer": "Prototype decision-support score; not clinically or legally validated.",
+        }
+
+    def _learned_risk_score(self, features: Sequence[float]) -> Tuple[float, List[Dict[str, Any]]]:
+        """Score = 1 + 99 x P(re-arrest within two years), with an exact breakdown.
+
+        For logistic regression the log-odds is the intercept plus, per
+        feature, coefficient x standardised value, so each factor's
+        ``contribution`` is exactly how much it raised or lowered the odds.
+        """
+        X = np.asarray([features], dtype=float)
+        probability = float(self.risk_model.predict_proba(X)[0, 1])
+        imputer = self.risk_model.named_steps["imputer"]
+        scaler = self.risk_model.named_steps["scaler"]
+        model = self.risk_model.named_steps["model"]
+        used = imputer.transform(X)
+        standardised = scaler.transform(used)[0]
+        factors = []
+        for index, name in enumerate(FEATURE_COLUMNS):
+            coefficient = float(model.coef_[0][index])
+            factors.append({
+                "name": self.FEATURE_LABELS.get(name, name),
+                "key": name,
+                "normalized_value": round(float(used[0][index]), 4),
+                "imputed": bool(not np.isfinite(X[0][index])),
+                "weight": round(coefficient, 4),
+                "contribution": round(coefficient * float(standardised[index]), 3),
+            })
+        factors.sort(key=lambda item: (-abs(item["contribution"]), item["key"]))
+        return float(np.clip(1.0 + 99.0 * probability, 1.0, 100.0)), factors
 
     @staticmethod
     def _risk_level(score: float) -> str:
@@ -1281,6 +1415,7 @@ class CRMSMLPipeline:
                 "gang_imputer": getattr(self, "gang_imputer", self.imputer),
                 "feature_columns": FEATURE_COLUMNS,
                 "gang_feature_columns": GANG_FEATURE_COLUMNS,
+                "risk_model": getattr(self, "risk_model", None),
             }, handle, protocol=pickle.HIGHEST_PROTOCOL)
         hashes = {name: _file_sha256(output_dir / name) for name in ARTIFACT_FILES}
         self.training_metadata["artifact_sha256"] = hashes
@@ -1357,6 +1492,12 @@ class CRMSMLPipeline:
                 metadata = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 metadata = {}
+        if self._is_stale_demo_model(metadata):
+            logger.warning("Active demo model was trained on a different synthetic dataset; retraining on %s.",
+                           DATASET_PATH.name)
+            self.train()
+            self.integrity = {"status": "verified", "verified": True}
+            return
         if all((MODEL_DIR / name).exists() for name in ARTIFACT_FILES):
             # Raises ArtifactIntegrityError (never silently retrains) on tampering.
             self.integrity = verify_artifacts(MODEL_DIR, metadata)
@@ -1376,6 +1517,7 @@ class CRMSMLPipeline:
             self.crime_calibrator = enc.get("crime_calibrator")
             self.gang_scaler = enc.get("gang_scaler", self.scaler)
             self.gang_imputer = enc.get("gang_imputer", self.imputer)
+            self.risk_model = enc.get("risk_model")
             if metadata:
                 self.training_metadata = metadata
                 self.model_version = self.training_metadata.get("model_version", "v1.0")
@@ -1386,6 +1528,24 @@ class CRMSMLPipeline:
         except (FileNotFoundError, EOFError, KeyError, pickle.UnpicklingError, json.JSONDecodeError):
             self.train()
             self.integrity = {"status": "verified", "verified": True}
+
+    @staticmethod
+    def _is_stale_demo_model(metadata: Dict[str, Any]) -> bool:
+        """True only for a synthetic demo model whose dataset was since replaced.
+
+        Real-data models are never replaced automatically: they change only
+        through the reviewed candidate/activation workflow.
+        """
+        dataset = metadata.get("dataset") or {}
+        if dataset.get("dataset_type") != "synthetic_demonstration" or not DATASET_PATH.exists():
+            return False
+        try:
+            current = json.loads(MANIFEST_PATH.read_text(encoding="utf-8")) if MANIFEST_PATH.exists() else {}
+        except json.JSONDecodeError:
+            return False
+        if current.get("dataset_type") != "synthetic_demonstration":
+            return False
+        return bool(dataset.get("sha256")) and dataset.get("sha256") != _dataset_sha256(DATASET_PATH)
 
     def get_metadata(self) -> Dict[str, Any]:
         return dict(self.training_metadata)
