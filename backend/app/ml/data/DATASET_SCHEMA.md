@@ -32,6 +32,16 @@ not for real-world criminal-risk assessment or deployment.
 | `crime_type` | categorical | 15 defined crime classes | target |
 | `gang_label` | categorical | 5 gangs + `None` | target |
 
+### Optional columns (after the 13 above, never model inputs)
+
+| Column | Type | Role |
+|---|---|---|
+| `incident_date` | ISO 8601 date/time, required on every row if present | Enables the time-based holdout (newest 20% of cases) and time-series CV |
+| `slice_<name>` | categorical text, blank = unknown | Group for per-slice error analysis only (e.g. `slice_district`) |
+
+Using a real dataset instead of this one is described in
+[docs/MODEL_TRAINING.md](../../../../docs/MODEL_TRAINING.md).
+
 ## Rebuilding the dataset
 
 Run:

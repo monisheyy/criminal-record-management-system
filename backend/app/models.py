@@ -185,6 +185,15 @@ class Case(Base):
     status = Column(Enum(CaseStatus), default=CaseStatus.open)
     priority = Column(String(20), default="normal")  # low, normal, high, critical
 
+    # Incident facts recorded by the investigating officer. These are the
+    # observed inputs for the AI crime-type model (see app/ml/FEATURE_CONTRACT.md).
+    # NULL means "not recorded" and is kept distinct from an explicit "no"
+    # (the prediction reports it as a defaulted input).
+    weapons_involved = Column(Boolean, nullable=True)
+    drug_involvement = Column(Boolean, nullable=True)
+    financial_motivation = Column(Boolean, nullable=True)
+    tech_involvement = Column(Boolean, nullable=True)
+
     # FIR
     fir_number = Column(String(30), nullable=True)
     fir_date = Column(DateTime(timezone=True), nullable=True)

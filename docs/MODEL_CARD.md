@@ -24,10 +24,11 @@ Any automated or semi-automated decision affecting a person (arrest, charging, b
 
 Computed at every training run and stored with the candidate (visible in Model Governance):
 
-* Stratified 80/20 holdout + 5-fold stratified cross-validation, fixed seed.
+* Holdout: when the dataset has an `incident_date` column, the newest 20% of cases (train on the past, test on the future) with forward-chaining time-series cross-validation; otherwise a stratified 80/20 split + 5-fold stratified cross-validation, fixed seed.
+* Model/calibration selection (`python -m app.ml.compare_models`) uses only the development portion, never the holdout.
 * Accuracy, balanced accuracy, macro and weighted precision/recall/F1, per-class metrics, confusion matrix, majority-class baseline, zero-recall classes.
-* **Calibration:** expected calibration error (10 bins), Brier score, reliability table. Displayed "confidence" values are model scores, not probabilities.
-* **Slices:** age band, gang membership, location-risk band, time of day — with sample sizes; slices under 10 samples are not scored.
+* **Calibration:** expected calibration error (10 bins), Brier score, reliability table. Optional sigmoid/isotonic calibration (`AI_CRMS_CALIBRATION`) is fitted on training data only; the gate measures the calibrated model. Displayed "confidence" values are still not validated real-world probabilities.
+* **Slices:** age band, gang membership, location-risk band, time of day, plus any `slice_*` group columns in the dataset (e.g. district) — with sample sizes; slices under 10 samples are not scored.
 
 ## Release gate
 

@@ -5,7 +5,7 @@ import { ChevronRight, FileText, Plus, Search } from 'lucide-react';
 import { casesAPI, getErrorMessage, usersAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getFieldErrors } from '../utils/errors';
-import { CASE_CRIME_TYPES, CASE_PRIORITIES, CASE_STATUSES } from '../utils/constants';
+import { CASE_CRIME_TYPES, CASE_INCIDENT_FACTS, CASE_PRIORITIES, CASE_STATUSES } from '../utils/constants';
 import { formatDate, localInputToIso, nowLocalInputValue } from '../utils/format';
 import { usePagedList } from '../utils/usePagedList';
 import { EmptyState, ErrorState, FieldError, FieldHint, LoadingState, Modal, Pagination } from '../components/ui';
@@ -14,7 +14,11 @@ import { PriorityBadge, StatusBadge } from '../components/RiskBadge';
 const EMPTY_FORM = {
   title: '', description: '', crime_type: '', location: '', incident_date: '', priority: 'normal',
   fir_number: '', fir_station: '', complainant_name: '', complainant_contact: '', assigned_officer_id: '',
+  ...Object.fromEntries(CASE_INCIDENT_FACTS.map((f) => [f.key, ''])),
 };
+
+// '' = not recorded (omitted from the payload), so "unknown" is never stored as "no".
+const TRI_STATE = { yes: true, no: false };
 
 function CreateCaseModal({ onClose, onCreated }) {
   const { isAdmin, isOfficer, user } = useAuth();
@@ -40,6 +44,7 @@ function CreateCaseModal({ onClose, onCreated }) {
     const payload = Object.fromEntries(Object.entries({
       ...form,
       incident_date: localInputToIso(form.incident_date),
+      ...Object.fromEntries(CASE_INCIDENT_FACTS.map((f) => [f.key, TRI_STATE[form[f.key]] ?? null])),
       assigned_officer_id: form.assigned_officer_id ? Number(form.assigned_officer_id) : null,
     }).filter(([, v]) => v !== '' && v !== null));
     try {
@@ -112,6 +117,23 @@ function CreateCaseModal({ onClose, onCreated }) {
               <FieldError>{fieldErrors.complainant_contact}</FieldError>
             </div>
           </div>
+          <fieldset className="form-group" style={{ border: 0, padding: 0, margin: '0 0 16px' }}>
+            <legend className="form-label">Incident facts</legend>
+            <FieldHint>Record only what the evidence shows; leave &ldquo;Not recorded&rdquo; when unknown. These are inputs to AI triage.</FieldHint>
+            <div className="form-grid" style={{ marginTop: 8 }}>
+              {CASE_INCIDENT_FACTS.map((f) => (
+                <div className="form-group" key={f.key}>
+                  <label className="form-label" htmlFor={`case-${f.key}`}>{f.label}</label>
+                  <select id={`case-${f.key}`} className="form-select" value={form[f.key]} onChange={set(f.key)}>
+                    <option value="">Not recorded</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                  <FieldError>{fieldErrors[f.key]}</FieldError>
+                </div>
+              ))}
+            </div>
+          </fieldset>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" htmlFor="case-officer">Investigating officer</label>
             {isAdmin ? (

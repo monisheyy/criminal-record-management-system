@@ -12,16 +12,16 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from app.ml.pipeline import CRMSMLPipeline, FEATURE_COLUMNS, load_training_dataset
+from app.ml.pipeline import CRMSMLPipeline, FEATURE_COLUMNS, UNVALIDATED_DATASET_TYPES, load_training_dataset
 
 
 def build_report() -> dict[str, Any]:
-    X, y_crime, y_gang, dataset = load_training_dataset()
+    X, y_crime, y_gang, dataset, context = load_training_dataset(with_context=True)
     pipeline = CRMSMLPipeline()
-    metrics = pipeline.train(X, y_crime, y_gang, save=False)
+    metrics = pipeline.train(X, y_crime, y_gang, save=False, context=context)
     crime_counts = Counter(map(str, y_crime))
     gang_counts = Counter(map(str, y_gang))
-    is_demo = dataset.get("dataset_type") == "synthetic_demonstration"
+    is_demo = dataset.get("dataset_type") in UNVALIDATED_DATASET_TYPES
     return {
         "report_type": "AI-CRMS ML evaluation and readiness audit",
         "dataset": dataset,
@@ -37,9 +37,10 @@ def build_report() -> dict[str, Any]:
         },
         "readiness": {
             "dataset_is_synthetic_demo": is_demo,
+            "quality_gate_passed": bool((metrics.get("quality_gate") or {}).get("passed")),
             "operational_release_eligible": False,
             "reasons": [
-                "The bundled dataset is synthetic demonstration data." if is_demo else "Dataset type requires independent review.",
+                "The dataset is synthetic or of unverified provenance." if is_demo else "Dataset type requires independent review.",
                 "Feature contract documents multiple inputs unavailable as structured, verified fields in the current application schema.",
                 "The intended prediction target and time point must be formally approved before operational evaluation.",
                 "Real-world representative validation, calibration, and fairness/error review are not established by this report.",

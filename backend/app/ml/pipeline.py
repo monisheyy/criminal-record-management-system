@@ -24,10 +24,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import sklearn
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import make_scorer, accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
-from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
+from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit, cross_validate, train_test_split
 from sklearn.pipeline import Pipeline as SklearnPipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
@@ -39,8 +40,11 @@ BASE_DIR = Path(__file__).resolve().parent
 MODEL_DIR = Path(os.getenv("AI_CRMS_MODEL_DIR") or (BASE_DIR / "saved_models")).resolve()
 CANDIDATES_DIR = MODEL_DIR / "candidates"
 DATA_DIR = BASE_DIR / "data"
-DATASET_PATH = DATA_DIR / "demo_crime_training_v1.csv"
-MANIFEST_PATH = DATA_DIR / "dataset_manifest.json"
+# Point AI_CRMS_DATASET_PATH at an approved dataset to train on real data. Its
+# manifest is read from AI_CRMS_DATASET_MANIFEST, else from the
+# dataset_manifest.json next to the CSV (build one with app.ml.build_manifest).
+DATASET_PATH = Path(os.getenv("AI_CRMS_DATASET_PATH") or (DATA_DIR / "demo_crime_training_v1.csv")).resolve()
+MANIFEST_PATH = Path(os.getenv("AI_CRMS_DATASET_MANIFEST") or (DATASET_PATH.parent / "dataset_manifest.json")).resolve()
 METADATA_PATH = MODEL_DIR / "metadata.json"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -49,6 +53,11 @@ TEST_SIZE = 0.20
 DATASET_VERSION = "1.0"
 PIPELINE_VERSION = "2.0"
 CV_FOLDS = 5
+# Optional probability calibration of the crime classifier: none | sigmoid | isotonic.
+# Choose it with evidence from `python -m app.ml.compare_models`, not by default.
+CALIBRATION_METHODS = ("none", "sigmoid", "isotonic")
+CALIBRATION_METHOD = (os.getenv("AI_CRMS_CALIBRATION") or "none").strip().lower()
+CALIBRATION_CV = 3
 
 # Reference date keeps feature extraction deterministic across calendar time.
 RISK_REFERENCE_DATE = date(2026, 1, 1)
@@ -84,6 +93,17 @@ FEATURE_COLUMNS = [
 GANG_FEATURE_COLUMNS = [name for name in FEATURE_COLUMNS if name != "is_gang_member"]
 GANG_FEATURE_INDICES = [FEATURE_COLUMNS.index(name) for name in GANG_FEATURE_COLUMNS]
 TARGET_COLUMNS = ["crime_type", "gang_label"]
+# Optional dataset columns that are never model inputs:
+#  - incident_date (ISO 8601) switches evaluation to a time-based holdout
+#    (train on older cases, test on the newest TEST_SIZE fraction);
+#  - slice_<name> columns (e.g. slice_district) are categorical groups used only
+#    for per-slice error analysis in subgroup_evaluation.
+DATE_COLUMN = "incident_date"
+SLICE_PREFIX = "slice_"
+# Case fields recorded by officers that map 1:1 onto model features.
+CASE_INCIDENT_FEATURES = ("weapons_involved", "drug_involvement", "financial_motivation", "tech_involvement")
+# Dataset types whose models may be trained and evaluated but never activated.
+UNVALIDATED_DATASET_TYPES = frozenset({"synthetic_demonstration", "unknown", "external"})
 
 from app.constants import CRIME_CATEGORIES, CRIME_TYPES  # noqa: E402  (single source of truth)
 GANG_NAMES = ["Shadow Syndicate", "Red Serpents", "Iron Fist", "Night Wolves", "Black Eagles"]
@@ -204,17 +224,31 @@ SUBGROUP_SLICES = {
 MIN_SLICE_SAMPLES = 10
 
 
-def subgroup_evaluation(X_raw: np.ndarray, y_true: np.ndarray, y_pred: np.ndarray, classes: Sequence[str]) -> Dict[str, Any]:
-    """Per-slice accuracy / macro-F1 with sample sizes and the worst-case gap."""
+def subgroup_evaluation(
+    X_raw: np.ndarray, y_true: np.ndarray, y_pred: np.ndarray, classes: Sequence[str],
+    categorical_slices: Optional[Dict[str, np.ndarray]] = None,
+) -> Dict[str, Any]:
+    """Per-slice accuracy / macro-F1 with sample sizes and the worst-case gap.
+
+    ``categorical_slices`` maps a slice name to one group label per row (from
+    the dataset's ``slice_*`` columns); blank labels are left out of every group.
+    """
     labels = np.arange(len(classes))
     overall = float(accuracy_score(y_true, y_pred)) if len(y_true) else 0.0
     report: Dict[str, Any] = {"overall_accuracy": overall, "min_slice_samples": MIN_SLICE_SAMPLES, "slices": {}}
     worst_gap = 0.0
+    masks_by_slice: Dict[str, List[Tuple[str, np.ndarray]]] = {}
     for slice_name, (feature, bands) in SUBGROUP_SLICES.items():
         column = X_raw[:, FEATURE_COLUMNS.index(feature)]
+        masks_by_slice[slice_name] = [
+            (label, np.isfinite(column) & (column >= low) & (column < high)) for low, high, label in bands
+        ]
+    for slice_name, values in (categorical_slices or {}).items():
+        values = np.asarray(values, dtype=str)
+        masks_by_slice[slice_name] = [(group, values == group) for group in sorted(set(values) - {""})]
+    for slice_name, group_masks in masks_by_slice.items():
         groups = []
-        for low, high, label in bands:
-            mask = np.isfinite(column) & (column >= low) & (column < high)
+        for label, mask in group_masks:
             n = int(mask.sum())
             entry: Dict[str, Any] = {"group": label, "n": n}
             if n >= MIN_SLICE_SAMPLES:
@@ -230,8 +264,11 @@ def subgroup_evaluation(X_raw: np.ndarray, y_true: np.ndarray, y_pred: np.ndarra
             groups.append(entry)
         report["slices"][slice_name] = groups
     report["max_abs_accuracy_gap"] = round(worst_gap, 4)
-    report["limitations"] = ("Slices use operational features only; no protected-attribute fairness "
-                             "evaluation is possible with this dataset.")
+    report["limitations"] = (
+        "Includes dataset-provided slice_* groups." if categorical_slices else
+        "Slices use operational features only; add legally permissible slice_* columns "
+        "to the dataset for group fairness evaluation."
+    )
     return report
 
 
@@ -285,22 +322,54 @@ def _parse_float(value: str, column: str, row_number: int) -> float:
     return number
 
 
-def load_training_dataset(path: Path = DATASET_PATH) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
-    """Load and validate the versioned CSV training dataset."""
+def _parse_incident_date(value: str, row_number: int) -> float:
+    """Return a sortable UTC timestamp; naive values are taken as UTC."""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise DatasetValidationError(
+            f"Dataset row {row_number}: '{DATE_COLUMN}' must be an ISO 8601 date/time"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def load_training_dataset(
+    path: Optional[Path] = None, *, with_context: bool = False, verify_manifest: bool = True,
+) -> Tuple[Any, ...]:
+    """Load and validate the versioned CSV training dataset (default: DATASET_PATH).
+
+    Returns ``(X, y_crime, y_gang, metadata)``; with ``with_context=True`` a fifth
+    item holds the non-feature columns: ``{"incident_dates": array|None,
+    "slices": {name: array}}``. ``verify_manifest=False`` skips the manifest hash
+    check (used when building a new manifest for this file).
+    """
+    path = Path(path) if path is not None else DATASET_PATH
     if not path.exists():
         raise FileNotFoundError(f"Training dataset not found: {path}")
 
     with path.open("r", newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         expected_columns = FEATURE_COLUMNS + TARGET_COLUMNS
-        if reader.fieldnames != expected_columns:
+        fieldnames = list(reader.fieldnames or [])
+        extra_columns = fieldnames[len(expected_columns):]
+        bad_extra = [name for name in extra_columns if name != DATE_COLUMN and not (
+            name.startswith(SLICE_PREFIX) and len(name) > len(SLICE_PREFIX))]
+        if (fieldnames[:len(expected_columns)] != expected_columns or bad_extra
+                or len(set(fieldnames)) != len(fieldnames)):
             raise DatasetValidationError(
-                f"Dataset columns do not match schema. Expected {expected_columns}, got {reader.fieldnames}"
+                f"Dataset columns do not match schema. Expected {expected_columns} optionally followed by "
+                f"'{DATE_COLUMN}' and '{SLICE_PREFIX}*' columns, got {reader.fieldnames}"
             )
+        has_dates = DATE_COLUMN in extra_columns
+        slice_columns = [name for name in extra_columns if name.startswith(SLICE_PREFIX)]
 
         rows: List[List[float]] = []
         crime_labels: List[str] = []
         gang_labels: List[str] = []
+        incident_dates: List[float] = []
+        slice_values: Dict[str, List[str]] = {name[len(SLICE_PREFIX):]: [] for name in slice_columns}
         missing_counts = {column: 0 for column in expected_columns}
 
         for row_number, row in enumerate(reader, start=2):
@@ -324,6 +393,15 @@ def load_training_dataset(path: Path = DATASET_PATH) -> Tuple[np.ndarray, np.nda
             crime_labels.append(crime)
             gang_labels.append(gang)
             rows.append(features)
+            if has_dates:
+                raw_date = (row.get(DATE_COLUMN) or "").strip()
+                if not raw_date:
+                    raise DatasetValidationError(
+                        f"Dataset row {row_number}: '{DATE_COLUMN}' is required when the column is present"
+                    )
+                incident_dates.append(_parse_incident_date(raw_date, row_number))
+            for name in slice_columns:
+                slice_values[name[len(SLICE_PREFIX):]].append((row.get(name) or "").strip())
 
     if not rows:
         raise DatasetValidationError("Training dataset is empty")
@@ -354,7 +432,7 @@ def load_training_dataset(path: Path = DATASET_PATH) -> Tuple[np.ndarray, np.nda
         raise DatasetValidationError("Training dataset must contain at least 100 rows")
 
     manifest: Dict[str, Any] = {}
-    if MANIFEST_PATH.exists() and path.resolve() == DATASET_PATH.resolve():
+    if verify_manifest and MANIFEST_PATH.exists() and path.resolve() == DATASET_PATH.resolve():
         try:
             manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -374,8 +452,48 @@ def load_training_dataset(path: Path = DATASET_PATH) -> Tuple[np.ndarray, np.nda
         "dataset_version": manifest.get("dataset_version", DATASET_VERSION),
         "dataset_type": manifest.get("dataset_type", "unknown"),
         "sha256": _dataset_sha256(path),
+        "has_incident_dates": has_dates,
+        "slice_columns": sorted(slice_values),
     }
-    return X, y_crime, y_gang, metadata
+    if has_dates:
+        metadata["incident_date_range"] = [
+            datetime.fromtimestamp(min(incident_dates), timezone.utc).isoformat(),
+            datetime.fromtimestamp(max(incident_dates), timezone.utc).isoformat(),
+        ]
+    if not with_context:
+        return X, y_crime, y_gang, metadata
+    context = {
+        "incident_dates": np.asarray(incident_dates, dtype=float) if has_dates else None,
+        "slices": {name: np.asarray(values, dtype=str) for name, values in slice_values.items()},
+    }
+    return X, y_crime, y_gang, metadata, context
+
+
+def holdout_split(y_encoded: np.ndarray, incident_dates: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray, str]:
+    """Return (train_idx, test_idx, kind) for the locked evaluation holdout.
+
+    With incident dates the newest TEST_SIZE fraction of cases is held out
+    (ties broken by row order), matching real use: trained on the past, applied
+    to new cases. Otherwise a stratified random split is used.
+    """
+    if incident_dates is not None:
+        order = np.argsort(np.asarray(incident_dates, dtype=float), kind="stable")
+        n_test = int(np.ceil(len(order) * TEST_SIZE))
+        return np.sort(order[:-n_test]), np.sort(order[-n_test:]), "time"
+    train_idx, test_idx = train_test_split(
+        np.arange(len(y_encoded)), test_size=TEST_SIZE, random_state=RANDOM_SEED, stratify=y_encoded
+    )
+    return train_idx, test_idx, "stratified"
+
+
+def crime_estimator() -> RandomForestClassifier:
+    return RandomForestClassifier(n_estimators=150, max_depth=10, random_state=RANDOM_SEED, class_weight="balanced")
+
+
+def calibration_method() -> str:
+    if CALIBRATION_METHOD not in CALIBRATION_METHODS:
+        raise ValueError(f"AI_CRMS_CALIBRATION must be one of {CALIBRATION_METHODS}, got {CALIBRATION_METHOD!r}")
+    return CALIBRATION_METHOD
 
 
 class CRMSMLPipeline:
@@ -386,6 +504,7 @@ class CRMSMLPipeline:
         self.label_encoder_gang = LabelEncoder()
         self.imputer: Optional[SimpleImputer] = None
         self.scaler = StandardScaler()
+        self.crime_calibrator: Optional[CalibratedClassifierCV] = None
         self.model_version = "v1.0"
         self.is_trained = False
         self.training_metadata: Dict[str, Any] = {}
@@ -405,15 +524,20 @@ class CRMSMLPipeline:
         y_gang: Optional[Sequence[str]] = None,
         *,
         save: bool = True,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Train and rigorously evaluate both classifiers on a deterministic holdout.
 
         The holdout metrics are the authoritative persisted evaluation metrics.
-        Five-fold stratified cross-validation is additionally reported as a
-        reproducibility/robustness diagnostic when every class has enough samples.
+        When the dataset has incident dates the holdout is the newest cases;
+        otherwise it is a stratified random split. Cross-validation on the full
+        dataset is additionally reported as a robustness diagnostic.
+        ``context`` carries non-feature columns for externally supplied X
+        (see ``load_training_dataset(with_context=True)``).
         """
+        calibration = calibration_method()
         if X is None:
-            X, y_crime, y_gang, dataset_meta = load_training_dataset()
+            X, y_crime, y_gang, dataset_meta, context = load_training_dataset(with_context=True)
         else:
             if y_crime is None or y_gang is None:
                 raise ValueError("X, y_crime and y_gang must be supplied together")
@@ -442,13 +566,14 @@ class CRMSMLPipeline:
         y_crime_enc = self.label_encoder_crime.transform(y_crime)
         y_gang_enc = self.label_encoder_gang.transform(y_gang)
 
-        indices = np.arange(len(X))
-        crime_train_idx, crime_test_idx = train_test_split(
-            indices, test_size=TEST_SIZE, random_state=RANDOM_SEED, stratify=y_crime_enc
-        )
-        gang_train_idx, gang_test_idx = train_test_split(
-            indices, test_size=TEST_SIZE, random_state=RANDOM_SEED, stratify=y_gang_enc
-        )
+        context = context or {}
+        incident_dates = context.get("incident_dates")
+        slices = context.get("slices") or {}
+        if incident_dates is not None and len(incident_dates) != len(X):
+            raise DatasetValidationError("incident_dates must have one value per row")
+        crime_train_idx, crime_test_idx, split_kind = holdout_split(y_crime_enc, incident_dates)
+        gang_train_idx, gang_test_idx, _ = holdout_split(y_gang_enc, incident_dates)
+        time_ordered = split_kind == "time"
 
         # Fit preprocessing only on each training split. This prevents test-set leakage.
         self.imputer = SimpleImputer(strategy="median")
@@ -458,24 +583,49 @@ class CRMSMLPipeline:
         X_crime_train_scaled = self.scaler.fit_transform(X_crime_train)
         X_crime_test_scaled = self.scaler.transform(X_crime_test)
 
-        self.crime_classifier = RandomForestClassifier(
-            n_estimators=150, max_depth=10, random_state=RANDOM_SEED, class_weight="balanced"
-        )
-        self.crime_classifier.fit(X_crime_train_scaled, y_crime_enc[crime_train_idx])
-        crime_pred = self.crime_classifier.predict(X_crime_test_scaled)
+        y_crime_train = y_crime_enc[crime_train_idx]
+        y_crime_test = y_crime_enc[crime_test_idx]
+        self.crime_classifier = crime_estimator()
+        self.crime_classifier.fit(X_crime_train_scaled, y_crime_train)
+        raw_test_proba = self.crime_classifier.predict_proba(X_crime_test_scaled)
+        # The calibrator (if any) is what serves predictions, so it is also what
+        # the holdout metrics and quality gate measure. The plain forest is kept
+        # for its global feature importances.
+        self.crime_calibrator = None
+        calibration_note = None
+        if calibration != "none":
+            min_train_class = int(np.bincount(y_crime_train, minlength=len(self.label_encoder_crime.classes_)).min())
+            if min_train_class >= CALIBRATION_CV:
+                self.crime_calibrator = CalibratedClassifierCV(
+                    crime_estimator(), method=calibration, cv=CALIBRATION_CV
+                ).fit(X_crime_train_scaled, y_crime_train)
+            else:
+                calibration_note = (f"Calibration skipped: every class needs at least {CALIBRATION_CV} "
+                                    f"training rows (smallest has {min_train_class}).")
+        if self.crime_calibrator is not None:
+            test_proba = self.crime_calibrator.predict_proba(X_crime_test_scaled)
+        else:
+            test_proba = raw_test_proba
+        crime_pred = test_proba.argmax(axis=1)
         crime_metrics = self._metrics(
-            y_crime_enc[crime_test_idx], crime_pred, len(crime_train_idx), len(crime_test_idx),
+            y_crime_test, crime_pred, len(crime_train_idx), len(crime_test_idx),
             self.label_encoder_crime.classes_
         )
-        crime_metrics["calibration"] = expected_calibration_error(
-            y_crime_enc[crime_test_idx], self.crime_classifier.predict_proba(X_crime_test_scaled)
-        )
+        crime_metrics["calibration"] = expected_calibration_error(y_crime_test, test_proba)
+        crime_metrics["calibration"]["method"] = calibration if self.crime_calibrator is not None else "none"
+        if self.crime_calibrator is not None:
+            crime_metrics["calibration"]["uncalibrated_expected_calibration_error"] = (
+                expected_calibration_error(y_crime_test, raw_test_proba)["expected_calibration_error"]
+            )
+        if calibration_note:
+            crime_metrics["calibration"]["note"] = calibration_note
         crime_metrics["subgroup_evaluation"] = subgroup_evaluation(
-            X[crime_test_idx], y_crime_enc[crime_test_idx], crime_pred, self.label_encoder_crime.classes_
+            X[crime_test_idx], y_crime_test, crime_pred, self.label_encoder_crime.classes_,
+            categorical_slices={name: values[crime_test_idx] for name, values in slices.items()},
         )
         crime_cv = self._cross_validation(
-            X, y_crime_enc, self.label_encoder_crime.classes_,
-            RandomForestClassifier(n_estimators=150, max_depth=10, random_state=RANDOM_SEED, class_weight="balanced")
+            X, y_crime_enc, self.label_encoder_crime.classes_, crime_estimator(),
+            order=np.argsort(incident_dates, kind="stable") if time_ordered else None,
         )
         crime_metrics["cross_validation"] = crime_cv
 
@@ -505,7 +655,8 @@ class CRMSMLPipeline:
         )
         gang_metrics["cross_validation"] = self._cross_validation(
             X_gang, y_gang_enc, self.label_encoder_gang.classes_,
-            RandomForestClassifier(n_estimators=100, max_depth=8, random_state=RANDOM_SEED, class_weight="balanced")
+            RandomForestClassifier(n_estimators=100, max_depth=8, random_state=RANDOM_SEED, class_weight="balanced"),
+            order=np.argsort(incident_dates, kind="stable") if time_ordered else None,
         )
 
         # Persist the crime preprocessing used by the prediction API. The gang model
@@ -528,7 +679,12 @@ class CRMSMLPipeline:
             "dataset": dataset_meta,
             "random_seed": RANDOM_SEED,
             "test_size": TEST_SIZE,
-            "evaluation_method": "stratified 80/20 holdout + 5-fold stratified cross-validation",
+            "evaluation_method": (
+                "time-based holdout (newest 20% of cases) + forward-chaining time-series cross-validation"
+                if time_ordered else "stratified 80/20 holdout + 5-fold stratified cross-validation"
+            ),
+            "holdout_split": split_kind,
+            "calibration_method": crime_metrics["calibration"]["method"],
             "cv_folds": CV_FOLDS,
             "feature_columns": FEATURE_COLUMNS.copy(),
             "model_feature_columns": {
@@ -606,17 +762,27 @@ class CRMSMLPipeline:
         }
 
     @staticmethod
-    def _cross_validation(X: np.ndarray, y: np.ndarray, classes: Sequence[str], estimator: RandomForestClassifier) -> Dict[str, Any]:
-        min_class_count = min(np.bincount(y))
-        folds = min(CV_FOLDS, int(min_class_count))
-        if folds < 2:
-            return {"enabled": False, "reason": "At least two samples per class are required."}
+    def _cross_validation(
+        X: np.ndarray, y: np.ndarray, classes: Sequence[str], estimator: RandomForestClassifier,
+        order: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
+        """Robustness diagnostic. With ``order`` (chronological row order) folds
+        always train on earlier cases and test on later ones."""
         pipeline = SklearnPipeline([
             ("imputer", SimpleImputer(strategy="median")),
             ("scaler", StandardScaler()),
             ("model", estimator),
         ])
-        cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=RANDOM_SEED)
+        if order is not None:
+            X, y = X[order], y[order]
+            folds = CV_FOLDS
+            cv = TimeSeriesSplit(n_splits=folds)
+        else:
+            min_class_count = min(np.bincount(y))
+            folds = min(CV_FOLDS, int(min_class_count))
+            if folds < 2:
+                return {"enabled": False, "reason": "At least two samples per class are required."}
+            cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=RANDOM_SEED)
         scores = cross_validate(
             pipeline, X, y, cv=cv,
             scoring={
@@ -630,6 +796,7 @@ class CRMSMLPipeline:
         return {
             "enabled": True,
             "folds": folds,
+            "scheme": "time_series" if order is not None else "stratified",
             "accuracy_mean": float(np.mean(scores["test_accuracy"])),
             "accuracy_std": float(np.std(scores["test_accuracy"])),
             "precision_mean": float(np.mean(scores["test_precision"])),
@@ -646,7 +813,8 @@ class CRMSMLPipeline:
         feature_quality = self._feature_input_quality(criminal_data)
         X_scaled = self._transform_features(np.array([features], dtype=float))
 
-        crime_proba = self.crime_classifier.predict_proba(X_scaled)[0]
+        crime_model = self.crime_calibrator if self.crime_calibrator is not None else self.crime_classifier
+        crime_proba = crime_model.predict_proba(X_scaled)[0]
         crime_idx = int(np.argmax(crime_proba))
         predicted_crime = self.label_encoder_crime.inverse_transform([crime_idx])[0]
         crime_confidence = float(crime_proba[crime_idx])
@@ -716,11 +884,7 @@ class CRMSMLPipeline:
                     "and has not been validated for real-world use."
                     if self.is_synthetic else None
                 ),
-                "calibration_warning": (
-                    "Confidence values are uncalibrated model scores, not probabilities. Holdout expected "
-                    "calibration error: "
-                    f"{((self.training_metadata.get('crime_classifier') or {}).get('calibration') or {}).get('expected_calibration_error', 'unknown')}."
-                ),
+                "calibration_warning": self._calibration_warning(),
                 "risk_factors": risk_factors,
                 "risk_score_method": {
                     "type": "deterministic_weighted_prototype",
@@ -730,6 +894,15 @@ class CRMSMLPipeline:
                 "explanation": explanation,
             },
         }
+
+    def _calibration_warning(self) -> str:
+        ece = ((self.training_metadata.get("crime_classifier") or {}).get("calibration") or {}).get(
+            "expected_calibration_error", "unknown")
+        if self.crime_calibrator is not None:
+            return (f"Confidence values are {self.training_metadata.get('calibration_method', 'calibrated')}-calibrated "
+                    f"on training data. Holdout expected calibration error: {ece}. They are still not validated "
+                    "real-world probabilities for an individual case.")
+        return f"Confidence values are uncalibrated model scores, not probabilities. Holdout expected calibration error: {ece}."
 
     def _build_prediction_explanation(
         self,
@@ -1064,6 +1237,7 @@ class CRMSMLPipeline:
                 "gang": self.label_encoder_gang,
                 "scaler": self.scaler,
                 "imputer": self.imputer,
+                "crime_calibrator": self.crime_calibrator,
                 "gang_scaler": getattr(self, "gang_scaler", self.scaler),
                 "gang_imputer": getattr(self, "gang_imputer", self.imputer),
                 "feature_columns": FEATURE_COLUMNS,
@@ -1160,6 +1334,7 @@ class CRMSMLPipeline:
             self.label_encoder_gang = enc["gang"]
             self.scaler = enc["scaler"]
             self.imputer = enc.get("imputer")
+            self.crime_calibrator = enc.get("crime_calibrator")
             self.gang_scaler = enc.get("gang_scaler", self.scaler)
             self.gang_imputer = enc.get("gang_imputer", self.imputer)
             if metadata:
@@ -1184,7 +1359,7 @@ class CRMSMLPipeline:
     @property
     def is_synthetic(self) -> bool:
         # Unknown provenance is treated as unvalidated, never as production-grade.
-        return self.dataset_type in {"synthetic_demonstration", "unknown", "external"}
+        return self.dataset_type in UNVALIDATED_DATASET_TYPES
 
 
 _pipeline_instance: Optional[CRMSMLPipeline] = None

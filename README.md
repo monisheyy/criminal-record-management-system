@@ -46,7 +46,7 @@ Use `localhost` (not `127.0.0.1`) for both servers so the session cookie is same
 ## Tests
 
 ```powershell
-cd backend;  pytest -q                      # 213 tests: API, authorization matrix, security, integrity, migrations, ML
+cd backend;  pytest -q                      # 223 tests: API, authorization matrix, security, integrity, migrations, ML
 cd frontend; npm run lint; npm test; npm run build
 cd frontend; npx playwright install chromium; npm run test:e2e   # real browser + real API
 .\VERIFY_AI_CRMS.ps1                        # everything above + dependency audits
@@ -67,6 +67,7 @@ Release archives: `python scripts/package_release.py` (git-tracked files only; f
 | [docs/AUDIT_REMEDIATION.md](docs/AUDIT_REMEDIATION.md) | Item-by-item response to the project audit, with evidence |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, controls, residual risks |
 | [docs/MODEL_CARD.md](docs/MODEL_CARD.md) | AI model scope, evaluation, limitations |
+| [docs/MODEL_TRAINING.md](docs/MODEL_TRAINING.md) | Training the model on a real, approved dataset |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Deployment, migrations, backup/restore, key rotation, monitoring, incident response |
 | [TESTING_STRATEGY.md](TESTING_STRATEGY.md) | Test layers and coverage |
 | [VERIFICATION_STATUS.md](VERIFICATION_STATUS.md) | Latest verified results |

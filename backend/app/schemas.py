@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import (
-    BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator, model_validator,
+    BaseModel, ConfigDict, EmailStr, Field, StrictBool, StringConstraints, field_validator, model_validator,
 )
 
 from app.constants import (
@@ -379,6 +379,10 @@ class CaseBase(BaseModel):
     location: Optional[str] = None
     incident_date: Optional[datetime] = None
     priority: Optional[str] = "normal"
+    weapons_involved: Optional[bool] = None
+    drug_involvement: Optional[bool] = None
+    financial_motivation: Optional[bool] = None
+    tech_involvement: Optional[bool] = None
     fir_number: Optional[str] = None
     fir_date: Optional[datetime] = None
     fir_filed_by: Optional[str] = None
@@ -395,6 +399,11 @@ class _CaseWriteFields(BaseModel):
     location: Optional[Str(200)] = None
     incident_date: Optional[datetime] = None
     priority: Optional[CasePriority] = None
+    # Incident facts used as AI model inputs; None = not recorded.
+    weapons_involved: Optional[StrictBool] = None
+    drug_involvement: Optional[StrictBool] = None
+    financial_motivation: Optional[StrictBool] = None
+    tech_involvement: Optional[StrictBool] = None
     fir_number: Optional[Str(30, 3, r"^[A-Za-z0-9/\-_.]{3,30}$")] = None
     fir_date: Optional[datetime] = None
     fir_filed_by: Optional[Str(100)] = None
