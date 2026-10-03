@@ -1518,6 +1518,15 @@ class CRMSMLPipeline:
             self.gang_scaler = enc.get("gang_scaler", self.scaler)
             self.gang_imputer = enc.get("gang_imputer", self.imputer)
             self.risk_model = enc.get("risk_model")
+            unknown_gangs = {str(name) for name in self.label_encoder_gang.classes_} - EXPECTED_GANGS
+            if unknown_gangs and not metadata.get("dataset"):
+                # Legacy artifacts without metadata that predict gangs this system
+                # no longer has: their outputs cannot be mapped, so rebuild them.
+                logger.warning("Legacy model artifacts predict unknown gangs %s; retraining on %s.",
+                               sorted(unknown_gangs), DATASET_PATH.name)
+                self.train()
+                self.integrity = {"status": "verified", "verified": True}
+                return
             if metadata:
                 self.training_metadata = metadata
                 self.model_version = self.training_metadata.get("model_version", "v1.0")
