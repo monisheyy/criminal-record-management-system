@@ -14,8 +14,8 @@ from app.security import require_admin, require_officer_or_admin
 from app.utils.audit import create_audit_log, create_notification
 from app.utils.pagination import MAX_PAGE_SIZE, paginate
 from app.ml.pipeline import (
-    ArtifactIntegrityError, CANDIDATES_DIR, CRMSMLPipeline, DatasetValidationError,
-    evaluate_quality_gate, get_pipeline,
+    ArtifactIntegrityError, CANDIDATES_DIR, CASE_INCIDENT_FEATURES, CRMSMLPipeline, DatasetValidationError,
+    UNVALIDATED_DATASET_TYPES, evaluate_quality_gate, get_pipeline,
 )
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -141,6 +141,12 @@ async def run_prediction(
         # time-of-day feature without inferring any feature from the target label.
         if case.incident_date is not None:
             criminal_data["incident_date"] = case.incident_date.isoformat()
+        # Officer-recorded incident facts; unrecorded (NULL) fields stay absent
+        # so feature_input_quality reports them as defaulted, not observed.
+        for name in CASE_INCIDENT_FEATURES:
+            value = getattr(case, name)
+            if value is not None:
+                criminal_data[name] = int(value)
 
     try:
         result = pipeline.predict(criminal_data)
@@ -422,11 +428,13 @@ def _activate(record: models.MLModel, justification: str, db: Session, current_u
     candidate_path = metadata.get("candidate_path")
     if metadata.get("candidate_status") not in {"awaiting_review", "retired"} or not candidate_path:
         raise HTTPException(status_code=409, detail="This model is not an activatable candidate")
-    if metadata.get("dataset_type") == "synthetic_demonstration":
+    # Unknown/external provenance is refused too: such a model would be loaded
+    # but then disabled at prediction time, so activating it only causes an outage.
+    if metadata.get("dataset_type") in UNVALIDATED_DATASET_TYPES or not metadata.get("dataset_type"):
         raise HTTPException(
             status_code=409,
-            detail=("This candidate was trained on synthetic demonstration data and cannot be activated. "
-                    "Use an authorized, quality-reviewed dataset and complete the evaluation process first."),
+            detail=("This candidate was trained on synthetic or unverified-provenance data and cannot be activated. "
+                    "Use an authorized, quality-reviewed dataset with a reviewed dataset_manifest.json first."),
         )
     gate = metadata.get("quality_gate") or evaluate_quality_gate(metadata.get("crime_classifier") or {})
     if not gate.get("passed"):

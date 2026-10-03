@@ -11,7 +11,7 @@ import NetworkGraph from '../components/NetworkGraph';
 import { PriorityBadge, StatusBadge } from '../components/RiskBadge';
 import { ConfirmDialog, EmptyState, ErrorState, FieldHint, LoadingState, Modal } from '../components/ui';
 import {
-  CASE_ROLES, CASE_STATUSES, CASE_STATUS_TRANSITIONS, EVIDENCE_STATUSES, EVIDENCE_TYPES, GENDERS, VICTIM_STATUSES,
+  CASE_INCIDENT_FACTS, CASE_ROLES, CASE_STATUSES, CASE_STATUS_TRANSITIONS, EVIDENCE_STATUSES, EVIDENCE_TYPES, GENDERS, VICTIM_STATUSES,
 } from '../utils/constants';
 import { formatDate, localInputToIso, nowLocalInputValue } from '../utils/format';
 import { humanize } from '../utils/errors';
@@ -404,6 +404,9 @@ export default function CaseDetails() {
               <div><dt>Filed by</dt><dd>{caseFile.fir_filed_by || '—'}</dd></div>
               <div><dt>Complainant</dt><dd>{caseFile.complainant_name || '—'}</dd></div>
               <div><dt>Complainant contact</dt><dd>{caseFile.complainant_contact || '—'}</dd></div>
+              {CASE_INCIDENT_FACTS.map((f) => (
+                <div key={f.key}><dt>{f.label}</dt><dd>{caseFile[f.key] == null ? 'Not recorded' : caseFile[f.key] ? 'Yes' : 'No'}</dd></div>
+              ))}
               <div><dt>Opened</dt><dd>{formatDate(caseFile.created_at, { withTime: true })}</dd></div>
               <div><dt>Closed</dt><dd>{formatDate(caseFile.closed_at, { withTime: true })}</dd></div>
             </dl>

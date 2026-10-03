@@ -18,6 +18,14 @@ export const CASE_PRIORITIES = [
   { value: 'critical', label: 'Critical' },
 ];
 
+// Officer-recorded incident facts; keys match the backend Case columns and AI model features.
+export const CASE_INCIDENT_FACTS = [
+  { key: 'weapons_involved', label: 'Weapon involved' },
+  { key: 'drug_involvement', label: 'Drugs involved' },
+  { key: 'financial_motivation', label: 'Financial motive' },
+  { key: 'tech_involvement', label: 'Technology used' },
+];
+
 export const CASE_STATUSES = [
   { value: 'open', label: 'Open' },
   { value: 'under_investigation', label: 'Under investigation' },
