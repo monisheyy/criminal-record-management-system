@@ -14,6 +14,23 @@ Task: *suggest the likely offence category for a new case from its incident deta
 
 ## 2. Assemble a lawful dataset
 
+### Option A: export this system's own closed cases (recommended)
+
+```bash
+python -m app.ml.export_training_data --output /secure/data/cases_v1.csv
+```
+
+Every closed or archived case with a verified offence category and an incident date becomes one row, already in the training schema with `incident_date` and a `slice_station` column. Features are built by the same code as live predictions (`app/ml/model_inputs.py`), so the model is trained on exactly what it will see. Unrecorded facts are left blank. The command prints cases per category, how often each feature was recorded, and warnings. It exits non-zero until there are at least 100 usable cases.
+
+Before you rely on it:
+
+- **Close cases with the final category.** Only `closed`/`archived` cases are used, and `Other`/`Unclassified` are skipped, so set `crime_type` to the verified outcome when closing.
+- **Record the Incident facts** (weapon, drugs, financial motive, technology) on every case. A feature that is never recorded carries no signal; the export warns about it.
+- **Link offenders with a role.** Features describe the case's `convicted` → `primary_offender` → `accused` → `accomplice` → `suspect` person, in that order; witnesses are never used.
+- **Check `prior_convictions` for leakage.** It is the offender's *current* count, which can include the conviction for this very case. Where possible, reduce it to the count before the incident.
+
+### Option B: an external dataset
+
 - Source: historical closed case files from this system or a partner agency, with written legal approval and a data-protection impact assessment.
 - Label (`crime_type`): the **final verified** outcome (charge-sheet or conviction category), never the first guess at FIR time. Values must come from `app.constants.CRIME_TYPES`. Map or merge local categories onto it.
 - Size: aim for **≥ 100 rows per category** (hundreds is better). Merge or drop rare categories; the gate fails any category the model never gets right.

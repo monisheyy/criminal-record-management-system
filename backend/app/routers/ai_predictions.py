@@ -13,8 +13,9 @@ from app import models, schemas
 from app.security import require_admin, require_officer_or_admin
 from app.utils.audit import create_audit_log, create_notification
 from app.utils.pagination import MAX_PAGE_SIZE, paginate
+from app.ml.model_inputs import model_input
 from app.ml.pipeline import (
-    ArtifactIntegrityError, CANDIDATES_DIR, CASE_INCIDENT_FEATURES, CRMSMLPipeline, DatasetValidationError,
+    ArtifactIntegrityError, CANDIDATES_DIR, CRMSMLPipeline, DatasetValidationError,
     UNVALIDATED_DATASET_TYPES, evaluate_quality_gate, get_pipeline,
 )
 
@@ -96,7 +97,6 @@ async def run_prediction(
 
     criminal = None
     case = None
-    criminal_data = {}
 
     if data.criminal_id:
         criminal = db.query(models.Criminal).filter(models.Criminal.id == data.criminal_id).first()
@@ -111,18 +111,6 @@ async def run_prediction(
             ).first() is not None
             if not has_access:
                 raise HTTPException(status_code=403, detail="You are not authorized to assess this criminal")
-        criminal_data = {
-            "id": criminal.id,
-            "first_name": criminal.first_name,
-            "last_name": criminal.last_name,
-            "prior_convictions": criminal.prior_convictions,
-            "date_of_birth": str(criminal.date_of_birth) if criminal.date_of_birth else None,
-            "crime_type": criminal.crime_type,
-            "gang_id": criminal.gang_id,
-            "is_wanted": criminal.is_wanted,
-            "is_incarcerated": criminal.is_incarcerated,
-            "known_associates": criminal.known_associates,
-        }
 
     if data.case_id:
         case = db.query(models.Case).filter(models.Case.id == data.case_id).first()
@@ -132,22 +120,9 @@ async def run_prediction(
             raise HTTPException(status_code=403, detail="You are not assigned to this case")
         if criminal and not any(cc.criminal_id == criminal.id for cc in case.criminals):
             raise HTTPException(status_code=422, detail="The criminal is not linked to this case")
-        if not criminal_data:
-            criminal_data = {
-                "crime_type": case.crime_type if case.crime_type not in ("Other", "Unclassified") else None,
-                "prior_convictions": None,
-            }
-        # The incident timestamp is an observed case field. It can support the
-        # time-of-day feature without inferring any feature from the target label.
-        if case.incident_date is not None:
-            criminal_data["incident_date"] = case.incident_date.isoformat()
-        # Officer-recorded incident facts; unrecorded (NULL) fields stay absent
-        # so feature_input_quality reports them as defaulted, not observed.
-        for name in CASE_INCIDENT_FEATURES:
-            value = getattr(case, name)
-            if value is not None:
-                criminal_data[name] = int(value)
 
+    # Same builder as the training-data exporter, so live inputs match training rows.
+    criminal_data = model_input(criminal, case)
     try:
         result = pipeline.predict(criminal_data)
     except ValueError as exc:

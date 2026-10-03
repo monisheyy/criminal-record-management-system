@@ -32,5 +32,5 @@ def apply_sort(query: Query, sort: Optional[str], allowed: Dict[str, object], de
 
 def like_term(value: str) -> str:
     """Escape LIKE wildcards in user input so '%' and '_' match literally."""
-    escaped = value.replace("\\", "\\\\").replace("%", "\%").replace("_", "\_")
+    escaped = value.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
     return f"%{escaped}%"
