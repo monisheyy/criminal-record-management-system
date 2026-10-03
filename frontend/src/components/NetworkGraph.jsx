@@ -9,13 +9,6 @@ const TYPE_META = {
   officer: { label: 'Officer', stroke: '#34C759' },
 };
 
-const EDGE_META = {
-  criminal_case: 'Criminal ↔ Case',
-  criminal_criminal: 'Shared case',
-  criminal_gang: 'Gang membership',
-  officer_case: 'Officer assignment',
-};
-
 function layoutNodes(nodes, width, height) {
   const groups = nodes.reduce((acc, n) => {
     (acc[n.type] ||= []).push(n);
