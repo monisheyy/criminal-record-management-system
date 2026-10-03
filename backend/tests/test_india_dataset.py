@@ -63,3 +63,20 @@ def test_only_stale_demo_models_are_retrained_automatically():
     real = {"dataset": {"dataset_type": "authorized_historical", "sha256": "0" * 64}}
     assert not ml.CRMSMLPipeline._is_stale_demo_model(real)
     assert not np.isnan(ml.CRMSMLPipeline().predict({})["risk_score"])
+
+
+def test_legacy_artifacts_with_unknown_gangs_are_rebuilt():
+    import pickle
+    from sklearn.preprocessing import LabelEncoder
+
+    ml.CRMSMLPipeline()  # ensure active artifacts exist
+    with (ml.MODEL_DIR / "encoders.pkl").open("rb") as handle:
+        encoders = pickle.load(handle)
+    encoders["gang"] = LabelEncoder().fit(["Shadow Syndicate", "Iron Fist", "None"])  # pre-India gang names
+    with (ml.MODEL_DIR / "encoders.pkl").open("wb") as handle:
+        pickle.dump(encoders, handle)
+    ml.METADATA_PATH.unlink()  # legacy artifacts carried no metadata
+
+    rebuilt = ml.CRMSMLPipeline()
+    assert set(rebuilt.label_encoder_gang.classes_) == set(GANG_NAMES) | {"None"}
+    assert rebuilt.risk_model is not None and ml.METADATA_PATH.exists()
