@@ -18,7 +18,8 @@ export function AuthProvider({ children }) {
     try { localStorage.removeItem('acrms_token'); localStorage.removeItem('acrms_user'); } catch { /* storage unavailable */ }
     authAPI.me()
       .then((res) => setUser(res.data))
-      .catch(() => setUser(null))
+      // Keep any user set by a login that finished while this check was in flight.
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
