@@ -1,7 +1,15 @@
 """
 AI-CRMS Synthetic Demo Data Seeder
 
-Populates an EMPTY development database with fictional demo data.
+Populates an EMPTY development database with fictional demo data set in India.
+
+* Every person, gang and case is invented. Names are random combinations of
+  common Indian first names and surnames drawn from many regions; any
+  resemblance to a real person is coincidental. Cities and police-station
+  areas are real places, used only as settings.
+* Gangs and their habits come from app/ml/data/generate_india_dataset.py, the
+  same profiles the AI is trained on, and seeded cases record their incident
+  facts, so live AI predictions on these records have real inputs.
 
 * Never runs in production (APP_ENV=production refuses SEED_DEMO_DATA=true).
 * Demo accounts use published passwords, so every one is flagged
@@ -38,101 +46,100 @@ CATEGORIES = {
     'Burglary': 'Property', 'Car Theft': 'Property', 'Vandalism': 'Property',
     'Arson': 'Property', 'Cybercrime': 'Technology'
 }
+# Real places used only as settings: (locality, city).
 LOCATIONS = [
-    'Downtown District', 'North End', 'Riverside Quarter', 'Industrial Zone',
-    'Harbor Front', 'University Area', 'Eastgate', 'West Hills',
-    'Central Market', 'Old Town'
+    ('Dongri', 'Mumbai'), ('Andheri East', 'Mumbai'), ('Zaveri Bazaar', 'Mumbai'), ('Mahipalpur', 'New Delhi'),
+    ('Karol Bagh', 'New Delhi'), ('Electronic City', 'Bengaluru'), ('Koramangala', 'Bengaluru'),
+    ('Secunderabad', 'Hyderabad'), ('Banjara Hills', 'Hyderabad'), ('Naroda', 'Ahmedabad'),
+    ('MP Nagar', 'Bhopal'), ('Ernakulam', 'Kochi'), ('Park Street', 'Kolkata'), ('T. Nagar', 'Chennai'),
+    ('Sector 29', 'Gurugram'), ('Johari Bazaar', 'Jaipur'), ('Model Town', 'Ludhiana'),
 ]
 THREAT_LEVELS = ['low', 'medium', 'high', 'critical']
 PRIORITIES = ['low', 'normal', 'high', 'critical']
 
-GANG_DATA = [
-    {'name': 'Shadow Syndicate', 'alias': 'SS, The Shadows', 'territory': 'Downtown District, Harbor Front',
-     'threat_level': 'critical', 'known_activities': 'Drug trafficking, money laundering, armed robbery',
-     'member_count': 47},
-    {'name': 'Red Serpents', 'alias': 'RS, Serpents', 'territory': 'North End, Industrial Zone',
-     'threat_level': 'high', 'known_activities': 'Arms trafficking, extortion, vehicle theft',
-     'member_count': 32},
-    {'name': 'Iron Fist', 'alias': 'IF, The Fist', 'territory': 'Riverside Quarter, Eastgate',
-     'threat_level': 'high', 'known_activities': 'Human trafficking, kidnapping, fraud',
-     'member_count': 28},
-    {'name': 'Night Wolves', 'alias': 'NW, Wolves', 'territory': 'West Hills, Old Town',
-     'threat_level': 'medium', 'known_activities': 'Burglary, car theft, vandalism',
-     'member_count': 19},
-    {'name': 'Black Eagles', 'alias': 'BE, Eagles', 'territory': 'University Area, Central Market',
-     'threat_level': 'medium', 'known_activities': 'Cybercrime, fraud, identity theft',
-     'member_count': 15},
-]
+from app.ml.data.generate_india_dataset import CRIME_PROFILES, GANGS  # noqa: E402
 
+# Fictional gangs: the same names and specialities the AI is trained on.
+GANG_MEMBER_COUNTS = [41, 33, 27, 30, 22, 18]
+GANG_DATA = [
+    {'name': name, 'alias': g['alias'], 'territory': g['territory'], 'threat_level': g['threat_level'],
+     'known_activities': g['known_activities'], 'member_count': count}
+    for (name, g), count in zip(GANGS.items(), GANG_MEMBER_COUNTS)
+]
+GANG_SPECIALTIES = [list(g['specialties']) for g in GANGS.values()]
+
+# gang_idx follows GANG_DATA: 0 Kaala Bichhoo Gang, 1 Lal Toofan Crew,
+# 2 Neela Saanp Syndicate, 3 Teen Talwar Gang, 4 Patang Syndicate, 5 Kaali Billi Crew.
 CRIMINALS_DATA = [
-    {'first_name': 'Marcus', 'last_name': 'Vega', 'alias': 'El Jefe, The Boss',
-     'gender': 'Male', 'nationality': 'Mexican', 'occupation': 'Business Owner (Front)',
+    {'first_name': 'Vikram', 'last_name': 'Malhotra', 'alias': 'Bichhoo Bhai',
+     'gender': 'Male', 'occupation': 'Transport Contractor (Front)',
      'crime_type': 'Drug Trafficking', 'prior_convictions': 4, 'gang_idx': 0, 'gang_rank': 'Leader',
      'is_wanted': True, 'threat_level': 'critical', 'risk_score': 92.5},
-    {'first_name': 'Dmitri', 'last_name': 'Volkov', 'alias': 'The Wolf',
-     'gender': 'Male', 'nationality': 'Russian', 'occupation': 'Arms Dealer',
-     'crime_type': 'Arms Trafficking', 'prior_convictions': 3, 'gang_idx': 1, 'gang_rank': 'Lieutenant',
+    {'first_name': 'Suresh', 'last_name': 'Naidu', 'alias': 'Talwar',
+     'gender': 'Male', 'occupation': 'Scrap Dealer',
+     'crime_type': 'Arms Trafficking', 'prior_convictions': 3, 'gang_idx': 3, 'gang_rank': 'Lieutenant',
      'is_wanted': True, 'threat_level': 'critical', 'risk_score': 88.0},
-    {'first_name': 'Sofia', 'last_name': 'Reyes', 'alias': 'La Tigresa',
-     'gender': 'Female', 'nationality': 'Colombian', 'occupation': 'Nightclub Operator',
-     'crime_type': 'Human Trafficking', 'prior_convictions': 2, 'gang_idx': 2, 'gang_rank': 'Captain',
+    {'first_name': 'Rekha', 'last_name': 'Pillai', 'alias': 'Patang Rani',
+     'gender': 'Female', 'occupation': 'Placement Agency Owner',
+     'crime_type': 'Human Trafficking', 'prior_convictions': 2, 'gang_idx': 4, 'gang_rank': 'Captain',
      'is_wanted': True, 'threat_level': 'high', 'risk_score': 81.3},
-    {'first_name': 'James', 'last_name': 'Morrow', 'alias': 'Jimmy Two-Face',
-     'gender': 'Male', 'nationality': 'American', 'occupation': 'Unemployed',
+    {'first_name': 'Harpreet', 'last_name': 'Gill', 'alias': 'Toofan',
+     'gender': 'Male', 'occupation': 'Unemployed',
      'crime_type': 'Robbery', 'prior_convictions': 5, 'gang_idx': None, 'gang_rank': None,
      'is_wanted': True, 'threat_level': 'high', 'risk_score': 76.8},
-    {'first_name': 'Chen', 'last_name': 'Liu', 'alias': 'The Ghost',
-     'gender': 'Male', 'nationality': 'Chinese', 'occupation': 'IT Consultant (Cover)',
-     'crime_type': 'Cybercrime', 'prior_convictions': 1, 'gang_idx': 4, 'gang_rank': 'Specialist',
+    {'first_name': 'Arjun', 'last_name': 'Rao', 'alias': 'Ghost',
+     'gender': 'Male', 'occupation': 'Software Freelancer (Cover)',
+     'crime_type': 'Cybercrime', 'prior_convictions': 1, 'gang_idx': 2, 'gang_rank': 'Specialist',
      'is_wanted': False, 'threat_level': 'high', 'risk_score': 71.2},
-    {'first_name': 'Rania', 'last_name': 'Hassan', 'alias': 'Queen of Spades',
-     'gender': 'Female', 'nationality': 'Egyptian', 'occupation': 'Accountant',
+    {'first_name': 'Sneha', 'last_name': 'Kulkarni', 'alias': 'CA Madam',
+     'gender': 'Female', 'occupation': 'Accountant',
      'crime_type': 'Money Laundering', 'prior_convictions': 2, 'gang_idx': 0, 'gang_rank': 'Treasurer',
      'is_wanted': False, 'threat_level': 'high', 'risk_score': 68.5},
-    {'first_name': 'Tony', 'last_name': 'Marchetti', 'alias': 'Fat Tony',
-     'gender': 'Male', 'nationality': 'Italian', 'occupation': 'Restaurant Owner',
-     'crime_type': 'Extortion', 'prior_convictions': 3, 'gang_idx': 1, 'gang_rank': 'Enforcer',
+    {'first_name': 'Imran', 'last_name': 'Shaikh', 'alias': 'Bhaijaan',
+     'gender': 'Male', 'occupation': 'Real Estate Broker',
+     'crime_type': 'Extortion', 'prior_convictions': 3, 'gang_idx': 3, 'gang_rank': 'Enforcer',
      'is_wanted': False, 'threat_level': 'high', 'risk_score': 65.0},
-    {'first_name': 'Arjun', 'last_name': 'Patel', 'alias': 'AJ',
-     'gender': 'Male', 'nationality': 'Indian', 'occupation': 'Taxi Driver',
+    {'first_name': 'Deepak', 'last_name': 'Yadav', 'alias': 'DJ',
+     'gender': 'Male', 'occupation': 'Auto-rickshaw Driver',
      'crime_type': 'Drug Trafficking', 'prior_convictions': 1, 'gang_idx': None, 'gang_rank': None,
      'is_wanted': False, 'threat_level': 'medium', 'risk_score': 48.3},
-    {'first_name': 'Elena', 'last_name': 'Stavros', 'alias': None,
-     'gender': 'Female', 'nationality': 'Greek', 'occupation': 'Jewelry Store Owner',
-     'crime_type': 'Fraud', 'prior_convictions': 2, 'gang_idx': 4, 'gang_rank': 'Associate',
+    {'first_name': 'Anjali', 'last_name': 'Mehta', 'alias': None,
+     'gender': 'Female', 'occupation': 'Call Centre Supervisor',
+     'crime_type': 'Fraud', 'prior_convictions': 2, 'gang_idx': 2, 'gang_rank': 'Associate',
      'is_wanted': False, 'threat_level': 'medium', 'risk_score': 44.7},
-    {'first_name': 'Kevin', 'last_name': 'Walsh', 'alias': 'K-Dog',
-     'gender': 'Male', 'nationality': 'Irish', 'occupation': 'Mechanic',
-     'crime_type': 'Car Theft', 'prior_convictions': 2, 'gang_idx': 3, 'gang_rank': 'Member',
+    {'first_name': 'Rakesh', 'last_name': 'Bisht', 'alias': 'Chabi',
+     'gender': 'Male', 'occupation': 'Mechanic',
+     'crime_type': 'Car Theft', 'prior_convictions': 2, 'gang_idx': 5, 'gang_rank': 'Member',
      'is_wanted': False, 'threat_level': 'medium', 'risk_score': 42.1},
-    {'first_name': 'Priya', 'last_name': 'Nair', 'alias': None,
-     'gender': 'Female', 'nationality': 'Indian', 'occupation': 'Bank Employee',
+    {'first_name': 'Kavya', 'last_name': 'Iyer', 'alias': None,
+     'gender': 'Female', 'occupation': 'Bank Employee',
      'crime_type': 'Fraud', 'prior_convictions': 0, 'gang_idx': None, 'gang_rank': None,
      'is_wanted': False, 'threat_level': 'low', 'risk_score': 28.5},
-    {'first_name': 'Gabriel', 'last_name': 'Santos', 'alias': 'Gabi',
-     'gender': 'Male', 'nationality': 'Brazilian', 'occupation': 'Unemployed',
+    {'first_name': 'Joseph', 'last_name': 'Fernandes', 'alias': 'Joe',
+     'gender': 'Male', 'occupation': 'Bouncer',
      'crime_type': 'Assault', 'prior_convictions': 3, 'gang_idx': None, 'gang_rank': None,
      'is_wanted': True, 'threat_level': 'high', 'risk_score': 77.4},
-    {'first_name': 'Mei', 'last_name': 'Zhang', 'alias': 'Dragon Lady',
-     'gender': 'Female', 'nationality': 'Chinese', 'occupation': 'Import/Export',
-     'crime_type': 'Human Trafficking', 'prior_convictions': 1, 'gang_idx': 2, 'gang_rank': 'Associate',
+    {'first_name': 'Lakshmi', 'last_name': 'Reddy', 'alias': 'Amma',
+     'gender': 'Female', 'occupation': 'Travel Agent',
+     'crime_type': 'Human Trafficking', 'prior_convictions': 1, 'gang_idx': 4, 'gang_rank': 'Associate',
      'is_wanted': True, 'threat_level': 'high', 'risk_score': 79.1},
-    {'first_name': 'Boris', 'last_name': 'Petrov', 'alias': 'Boris the Bear',
-     'gender': 'Male', 'nationality': 'Russian', 'occupation': 'Security Consultant',
-     'crime_type': 'Murder', 'prior_convictions': 1, 'gang_idx': 1, 'gang_rank': 'Soldier',
+    {'first_name': 'Balwinder', 'last_name': 'Sandhu', 'alias': 'Sher',
+     'gender': 'Male', 'occupation': 'Private Security Guard',
+     'crime_type': 'Murder', 'prior_convictions': 1, 'gang_idx': 3, 'gang_rank': 'Soldier',
      'is_wanted': True, 'threat_level': 'critical', 'risk_score': 95.2},
-    {'first_name': 'Lucia', 'last_name': 'Morales', 'alias': 'Lucky',
-     'gender': 'Female', 'nationality': 'Spanish', 'occupation': 'Casino Dealer',
+    {'first_name': 'Nikhil', 'last_name': 'Joshi', 'alias': 'Lucky',
+     'gender': 'Male', 'occupation': 'Jewellery Shop Owner',
      'crime_type': 'Money Laundering', 'prior_convictions': 1, 'gang_idx': 0, 'gang_rank': 'Associate',
      'is_wanted': False, 'threat_level': 'medium', 'risk_score': 52.3},
 ]
 
-FIRST_NAMES = ['Ahmed', 'Carlos', 'David', 'Feng', 'Hassan', 'Igor', 'John', 'Kim',
-               'Lara', 'Mohammed', 'Nadia', 'Oscar', 'Pedro', 'Rashid', 'Steve',
-               'Tariq', 'Uma', 'Victor', 'Wang', 'Yusuf']
-LAST_NAMES = ['Ahmed', 'Brown', 'Chen', 'Davis', 'Garcia', 'Hill', 'Jones',
-              'Khan', 'Lee', 'Martinez', 'Nguyen', 'Okeke', 'Park', 'Rahman',
-              'Singh', 'Taylor', 'Wang', 'Wilson', 'Yilmaz', 'Zhao']
+# Common Indian first names and surnames from many regions, combined at random.
+FIRST_NAMES = ['Aakash', 'Abdul', 'Aditi', 'Amit', 'Anil', 'Ayesha', 'Bhavna', 'Chetan', 'Dinesh', 'Farhan',
+               'Gaurav', 'Gurpreet', 'Irfan', 'Jaya', 'Karan', 'Lalit', 'Meena', 'Mohan', 'Nandini', 'Neha',
+               'Pooja', 'Prakash', 'Rahul', 'Ramesh', 'Ritu', 'Sanjay', 'Sabina', 'Sunil', 'Thomas', 'Vinod']
+LAST_NAMES = ['Agarwal', 'Bhat', 'Chatterjee', 'Das', 'Desai', 'Dsouza', 'Gupta', 'Hegde', 'Jain', 'Kapoor',
+              'Khan', 'Kumar', 'Mathew', 'Menon', 'Mishra', 'Nair', 'Pandey', 'Patel', 'Qureshi', 'Rana',
+              'Saxena', 'Sen', 'Singh', 'Sinha', 'Thakur', 'Varghese', 'Verma', 'Wagh']
 
 MO_LIST = [
     'Operates at night, uses getaway vehicles',
@@ -140,19 +147,37 @@ MO_LIST = [
     'Uses digital communication to evade detection',
     'Works in small coordinated teams',
     'Exploits financial system loopholes',
+    'Moves money through hawala operators and shell firms',
     'Known to use violence when confronted',
     'Uses multiple fake identities',
     'Operates through legitimate business fronts',
 ]
 
 
-def random_dob(min_age=20, max_age=60):
-    days_ago = random.randint(min_age * 365, max_age * 365)
-    return datetime.utcnow() - timedelta(days=days_ago)
-
-
 def random_past(max_days=365 * 3):
     return datetime.utcnow() - timedelta(days=random.randint(1, max_days))
+
+
+def profile_traits(crime_type, gang_idx):
+    """Typical age and associate names for this crime (and gang), from the
+    same profiles the AI is trained on, so seeded records look like the data."""
+    _, _, _, _, _, age_mu, assoc_mu, _ = CRIME_PROFILES[crime_type]
+    habits = list(GANGS.values())[gang_idx] if gang_idx is not None else None
+    age = int(min(max(round(random.gauss(age_mu + (habits['age_shift'] if habits else 0), 3)), 19), 65))
+    count = int(min(max(round(assoc_mu + (habits['assoc'] if habits else 0) + random.uniform(-1, 1)), 1), 15))
+    dob = datetime.utcnow() - timedelta(days=age * 365 + random.randint(0, 300))
+    associates = ", ".join(f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}" for _ in range(count))
+    return dob, associates
+
+
+def random_place():
+    locality, city = random.choice(LOCATIONS)
+    return f"{locality}, {city}"
+
+
+def demo_phone():
+    # Deliberately not a valid Indian mobile number (those start with 6-9).
+    return "+91-00" + "".join(random.choices("0123456789", k=8))
 
 
 def seed_database(db: Session):
@@ -167,16 +192,16 @@ def seed_database(db: Session):
         {'username': 'officer1', 'email': 'officer1@acrms.gov', 'full_name': 'Inspector Rajesh Kumar',
          'role': models.UserRole.investigating_officer, 'badge_number': 'OFF-101', 'department': 'Homicide',
          'password': 'officer123'},
-        {'username': 'officer2', 'email': 'officer2@acrms.gov', 'full_name': 'Inspector Sarah Johnson',
+        {'username': 'officer2', 'email': 'officer2@acrms.gov', 'full_name': 'Inspector Kavita Deshmukh',
          'role': models.UserRole.investigating_officer, 'badge_number': 'OFF-102', 'department': 'Narcotics',
          'password': 'officer123'},
-        {'username': 'officer3', 'email': 'officer3@acrms.gov', 'full_name': 'Inspector Ali Hassan',
+        {'username': 'officer3', 'email': 'officer3@acrms.gov', 'full_name': 'Inspector Salim Qureshi',
          'role': models.UserRole.investigating_officer, 'badge_number': 'OFF-103', 'department': 'Cybercrime',
          'password': 'officer123'},
         {'username': 'clerk1', 'email': 'clerk1@acrms.gov', 'full_name': 'Record Clerk Priya Sharma',
          'role': models.UserRole.record_clerk, 'badge_number': 'CLK-201', 'department': 'Records',
          'password': 'clerk123'},
-        {'username': 'clerk2', 'email': 'clerk2@acrms.gov', 'full_name': 'Record Clerk David Osei',
+        {'username': 'clerk2', 'email': 'clerk2@acrms.gov', 'full_name': 'Record Clerk Joseph Dsouza',
          'role': models.UserRole.record_clerk, 'badge_number': 'CLK-202', 'department': 'Records',
          'password': 'clerk123'},
     ]
@@ -233,22 +258,23 @@ def seed_database(db: Session):
     for i, cd in enumerate(CRIMINALS_DATA):
         crn = gen_crn()
         gang_id = created_gangs[cd['gang_idx']].id if cd['gang_idx'] is not None else None
+        dob, associates = profile_traits(cd['crime_type'], cd['gang_idx'])
         criminal = models.Criminal(
             crn=crn,
             first_name=cd['first_name'],
             last_name=cd['last_name'],
             alias=cd.get('alias'),
-            date_of_birth=random_dob(25, 55),
+            date_of_birth=dob,
             gender=cd.get('gender', 'Male'),
-            nationality=cd.get('nationality', 'Unknown'),
-            address=f"{random.randint(1, 999)} {random.choice(['Main St', 'Oak Ave', 'River Rd', 'Market Ln'])}, {random.choice(LOCATIONS)}",
-            phone=f"+1-{random.randint(200,999)}-{random.randint(100,999)}-{random.randint(1000,9999)}",
+            nationality='Indian',
+            address=f"{random.randint(1, 999)}, {random_place()}",
+            phone=demo_phone(),
             occupation=cd.get('occupation', 'Unknown'),
             crime_type=cd.get('crime_type'),
             crime_category=CATEGORIES.get(cd.get('crime_type', ''), 'Other'),
             prior_convictions=cd.get('prior_convictions', 0),
             modus_operandi=random.choice(MO_LIST),
-            known_associates=f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}, {random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
+            known_associates=associates,
             gang_id=gang_id,
             gang_rank=cd.get('gang_rank'),
             is_wanted=cd.get('is_wanted', False),
@@ -262,20 +288,23 @@ def seed_database(db: Session):
 
     # Additional random criminals
     for j in range(20):
-        crime_type = random.choice(CRIME_TYPES)
         crn = gen_crn()
-        gang = random.choice(created_gangs) if random.random() < 0.35 else None
+        gang_idx = random.randrange(len(created_gangs)) if random.random() < 0.35 else None
+        gang = created_gangs[gang_idx] if gang_idx is not None else None
+        crime_type = random.choice(GANG_SPECIALTIES[gang_idx] if gang else CRIME_TYPES)
+        dob, associates = profile_traits(crime_type, gang_idx)
         criminal = models.Criminal(
             crn=crn,
             first_name=random.choice(FIRST_NAMES),
             last_name=random.choice(LAST_NAMES),
             alias=f"{random.choice(FIRST_NAMES[::3])}" if random.random() < 0.4 else None,
-            date_of_birth=random_dob(18, 60),
+            date_of_birth=dob,
+            known_associates=associates,
             gender=random.choice(['Male', 'Female', 'Male', 'Male']),
-            nationality=random.choice(['American', 'British', 'Indian', 'Pakistani', 'Nigerian', 'Chinese', 'Mexican']),
-            address=f"{random.randint(1,999)} {random.choice(['Main St','Oak Ave','River Rd'])}, {random.choice(LOCATIONS)}",
-            phone=f"+1-{random.randint(200,999)}-{random.randint(100,999)}-{random.randint(1000,9999)}",
-            occupation=random.choice(['Unemployed', 'Driver', 'Mechanic', 'Student', 'Trader', 'Laborer']),
+            nationality='Indian',
+            address=f"{random.randint(1, 999)}, {random_place()}",
+            phone=demo_phone(),
+            occupation=random.choice(['Unemployed', 'Driver', 'Mechanic', 'Student', 'Trader', 'Labourer', 'Shopkeeper']),
             crime_type=crime_type,
             crime_category=CATEGORIES.get(crime_type, 'Other'),
             prior_convictions=random.randint(0, 5),
@@ -306,9 +335,9 @@ def seed_database(db: Session):
             db.add(models.CriminalHistory(
                 criminal_id=criminal.id,
                 event_type=evt_type,
-                description=f"Subject {evt_type.replace('_', ' ')} at {random.choice(LOCATIONS)}",
+                description=f"Subject {evt_type.replace('_', ' ')} at {random_place()}",
                 date=random_past(365 * 5),
-                location=random.choice(LOCATIONS),
+                location=random_place(),
                 case_reference=f"REF/{random.randint(2019, 2024)}/{random.randint(1000, 9999)}",
                 recorded_by=random.choice([u.full_name for u in created_users[:3]]),
             ))
@@ -321,36 +350,42 @@ def seed_database(db: Session):
     officers = [u for u in created_users if u.role == models.UserRole.investigating_officer]
 
     case_scenarios = [
-        {'title': 'Operation Shadow Strike', 'crime_type': 'Drug Trafficking', 'location': 'Harbor Front',
+        {'title': 'Operation Kaala Bichhoo', 'crime_type': 'Drug Trafficking', 'location': ('Dongri', 'Mumbai'),
          'status': models.CaseStatus.under_investigation, 'priority': 'critical',
-         'criminal_idxs': [0, 5, 14], 'officer_idx': 0},
-        {'title': 'Downtown Robbery Spree', 'crime_type': 'Robbery', 'location': 'Downtown District',
+         'criminal_idxs': [0, 5, 14], 'officer_idx': 1},
+        {'title': 'Highway Robbery Spree near Mahipalpur', 'crime_type': 'Robbery', 'location': ('Mahipalpur', 'New Delhi'),
          'status': models.CaseStatus.under_investigation, 'priority': 'high',
          'criminal_idxs': [3], 'officer_idx': 0},
-        {'title': 'Cybercrime Network Investigation', 'crime_type': 'Cybercrime', 'location': 'University Area',
+        {'title': 'Fake Tech-Support Call Centre', 'crime_type': 'Cybercrime', 'location': ('Electronic City', 'Bengaluru'),
          'status': models.CaseStatus.open, 'priority': 'high',
          'criminal_idxs': [4, 8], 'officer_idx': 2},
-        {'title': 'Human Trafficking Ring', 'crime_type': 'Human Trafficking', 'location': 'Riverside Quarter',
+        {'title': 'Placement Agency Trafficking Ring', 'crime_type': 'Human Trafficking', 'location': ('Secunderabad', 'Hyderabad'),
          'status': models.CaseStatus.under_investigation, 'priority': 'critical',
          'criminal_idxs': [2, 12], 'officer_idx': 1},
-        {'title': 'Money Laundering Operation', 'crime_type': 'Money Laundering', 'location': 'Central Market',
+        {'title': 'Hawala Network Probe', 'crime_type': 'Money Laundering', 'location': ('Zaveri Bazaar', 'Mumbai'),
          'status': models.CaseStatus.open, 'priority': 'high',
          'criminal_idxs': [5, 14], 'officer_idx': 1},
-        {'title': 'Arms Cache Discovery', 'crime_type': 'Arms Trafficking', 'location': 'Industrial Zone',
+        {'title': 'Illegal Arms Cache Seizure', 'crime_type': 'Arms Trafficking', 'location': ('Naroda', 'Ahmedabad'),
          'status': models.CaseStatus.closed, 'priority': 'critical',
          'criminal_idxs': [1, 13], 'officer_idx': 0},
-        {'title': 'Vehicle Theft Ring', 'crime_type': 'Car Theft', 'location': 'West Hills',
+        {'title': 'Two-Wheeler Theft Racket', 'crime_type': 'Car Theft', 'location': ('MP Nagar', 'Bhopal'),
          'status': models.CaseStatus.open, 'priority': 'normal',
          'criminal_idxs': [9], 'officer_idx': 2},
-        {'title': 'Fraud at Central Bank', 'crime_type': 'Fraud', 'location': 'Central Market',
+        {'title': 'Cooperative Bank Loan Fraud', 'crime_type': 'Fraud', 'location': ('Ernakulam', 'Kochi'),
          'status': models.CaseStatus.closed, 'priority': 'high',
          'criminal_idxs': [8, 10], 'officer_idx': 1},
-        {'title': 'Kidnapping for Ransom', 'crime_type': 'Kidnapping', 'location': 'Eastgate',
+        {'title': 'Businessman Kidnapped for Ransom', 'crime_type': 'Kidnapping', 'location': ('Banjara Hills', 'Hyderabad'),
          'status': models.CaseStatus.under_investigation, 'priority': 'critical',
          'criminal_idxs': [2], 'officer_idx': 0},
-        {'title': 'Assault at North End Bar', 'crime_type': 'Assault', 'location': 'North End',
+        {'title': 'Assault Outside Park Street Restaurant', 'crime_type': 'Assault', 'location': ('Park Street', 'Kolkata'),
          'status': models.CaseStatus.closed, 'priority': 'normal',
          'criminal_idxs': [11], 'officer_idx': 2},
+        {'title': 'Contract Killing in Naroda', 'crime_type': 'Murder', 'location': ('Naroda', 'Ahmedabad'),
+         'status': models.CaseStatus.under_investigation, 'priority': 'critical',
+         'criminal_idxs': [13], 'officer_idx': 0},
+        {'title': 'Builder Extortion Calls', 'crime_type': 'Extortion', 'location': ('T. Nagar', 'Chennai'),
+         'status': models.CaseStatus.open, 'priority': 'high',
+         'criminal_idxs': [6], 'officer_idx': 2},
     ]
 
     created_cases = []
@@ -360,22 +395,31 @@ def seed_database(db: Session):
         fir_number = f"FIR/{year}/" + "".join(random.choices(str_mod.digits, k=5))
         officer = officers[sc['officer_idx']]
         incident_dt = random_past(365 * 2)
+        # Incident facts follow the crime's typical profile (the patterns the AI
+        # learned), so predictions on these cases use observed inputs.
+        weapons, drugs, money, tech, night, *_ = CRIME_PROFILES[sc['crime_type']]
+        incident_dt = incident_dt.replace(hour=22 if night >= 0.5 else 14, minute=random.randint(0, 59))
+        locality, city = sc['location']
         case = models.Case(
             case_number=case_number,
             fir_number=fir_number,
             title=sc['title'],
-            description=f"Investigation into {sc['crime_type'].lower()} activity at {sc['location']}. Multiple suspects identified.",
+            description=f"Investigation into {sc['crime_type'].lower()} activity at {locality}, {city}. Suspects identified.",
             crime_type=sc['crime_type'],
             crime_category=CATEGORIES.get(sc['crime_type'], 'Other'),
-            location=sc['location'],
+            location=f"{locality}, {city}",
+            weapons_involved=weapons >= 0.5,
+            drug_involvement=drugs >= 0.5,
+            financial_motivation=money >= 0.5,
+            tech_involvement=tech >= 0.5,
             incident_date=incident_dt,
             status=sc['status'],
             priority=sc['priority'],
             fir_date=incident_dt + timedelta(days=random.randint(0, 2)),
-            fir_filed_by=f"Constable {random.choice(LAST_NAMES)}",
-            fir_station=f"{sc['location']} Police Station",
+            fir_filed_by=f"Head Constable {random.choice(LAST_NAMES)}",
+            fir_station=f"{locality} Police Station, {city}",
             complainant_name=f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
-            complainant_contact=f"+1-{random.randint(200,999)}-{random.randint(1000,9999)}",
+            complainant_contact=demo_phone(),
             assigned_officer_id=officer.id,
             created_by_id=created_users[4].id,
             closed_at=datetime.utcnow() - timedelta(days=random.randint(10, 100)) if sc['status'] == models.CaseStatus.closed else None,
@@ -416,7 +460,7 @@ def seed_database(db: Session):
                     'Witness testimony recorded', 'DNA samples collected',
                     'Vehicle license plates recovered', 'Seized narcotics package',
                 ]),
-                location_found=random.choice(LOCATIONS),
+                location_found=random_place(),
                 collected_by=random.choice([u.full_name for u in officers]),
                 collected_at=random_past(180),
                 chain_of_custody=f"Collected → Lab Analysis → Evidence Room",
@@ -436,8 +480,8 @@ def seed_database(db: Session):
                 last_name=random.choice(LAST_NAMES),
                 age=random.randint(18, 75),
                 gender=random.choice(['Male', 'Female']),
-                address=f"{random.randint(1,999)} {random.choice(['Park Ave', 'River Rd'])}, {random.choice(LOCATIONS)}",
-                phone=f"+1-{random.randint(200,999)}-{random.randint(1000,9999)}",
+                address=f"{random.randint(1, 999)}, {random_place()}",
+                phone=demo_phone(),
                 injury_description=random.choice([
                     'Minor injuries, received first aid',
                     'Moderate injuries, hospitalized',
@@ -454,23 +498,18 @@ def seed_database(db: Session):
 
     # ── AI Predictions ────────────────────────────────────────────────────────
     log.info("  Creating AI predictions...")
+    from app.ml.model_inputs import model_input
     from app.ml.pipeline import get_pipeline
     pipeline = get_pipeline()
+    first_case = {}
+    for case, criminal_idxs in created_cases:
+        for cidx in criminal_idxs:
+            first_case.setdefault(cidx, case)
 
 
     for i, criminal in enumerate(created_criminals[:12]):
-        criminal_data = {
-            'id': criminal.id,
-            'first_name': criminal.first_name,
-            'last_name': criminal.last_name,
-            'prior_convictions': criminal.prior_convictions or 0,
-            'date_of_birth': str(criminal.date_of_birth) if criminal.date_of_birth else None,
-            'crime_type': criminal.crime_type,
-            'gang_id': criminal.gang_id,
-            'is_wanted': criminal.is_wanted,
-            'is_incarcerated': criminal.is_incarcerated,
-            'known_associates': criminal.known_associates,
-        }
+        case = first_case.get(i)
+        criminal_data = model_input(criminal, case)
         result = pipeline.predict(criminal_data)
         all_dicts = [{'id': c.id, 'first_name': c.first_name, 'last_name': c.last_name,
                       'prior_convictions': c.prior_convictions or 0,
@@ -489,6 +528,7 @@ def seed_database(db: Session):
         # pending: review decisions must come from real human reviewers.
         prediction = models.AIPrediction(
             criminal_id=criminal.id,
+            case_id=case.id if case is not None else None,
             predicted_crime_type=result['predicted_crime_type'],
             crime_type_confidence=result['crime_type_confidence'] / 100.0,
             gang_affiliation_probability=result['gang_affiliation_probability'] / 100.0,
@@ -509,21 +549,21 @@ def seed_database(db: Session):
     # ── Notifications ─────────────────────────────────────────────────────────
     log.info("  Creating notifications...")
     notifications_data = [
-        {'title': '🚨 HIGH-RISK ALERT: Marcus Vega', 'message': 'Risk score 92.5/100 — CRITICAL. Immediate review required.',
+        {'title': 'HIGH-RISK ALERT: Vikram Malhotra', 'message': 'Wanted narcotics suspect. Review the latest AI assessment and evidence.',
          'type': 'alert', 'role': 'admin'},
-        {'title': '🚨 HIGH-RISK ALERT: Boris Petrov', 'message': 'Risk score 95.2/100 — CRITICAL. Murder suspect at large.',
+        {'title': 'HIGH-RISK ALERT: Balwinder Sandhu', 'message': 'Murder suspect at large. Lookout notice circulated.',
          'type': 'alert', 'role': 'investigating_officer'},
-        {'title': '⚠ Duplicate Record Detected', 'message': 'Possible duplicate entry for Dmitri Volkov. Please review.',
+        {'title': 'Duplicate Record Detected', 'message': 'Possible duplicate entry for Suresh Naidu. Please review.',
          'type': 'warning', 'role': 'record_clerk'},
-        {'title': 'Case Closed: Arms Cache Discovery', 'message': 'Case CASE/2023/384920 has been successfully closed.',
+        {'title': 'Case Closed: Illegal Arms Cache Seizure', 'message': 'The Naroda arms cache case has been closed.',
          'type': 'success', 'role': None},
-        {'title': 'New Case Assigned', 'message': 'Operation Shadow Strike assigned to Inspector Rajesh Kumar.',
+        {'title': 'New Case Assigned', 'message': 'Operation Kaala Bichhoo assigned to Inspector Kavita Deshmukh.',
          'type': 'info', 'role': 'investigating_officer'},
-        {'title': '🤖 Demo model candidate available', 'message': 'A demo model candidate is available. It was trained on synthetic data; see Model Governance for its real evaluation metrics.',
+        {'title': 'Demo model active', 'message': 'The AI was trained on the synthetic India demo dataset; see Model Governance for its evaluation.',
          'type': 'info', 'role': 'admin'},
-        {'title': '⚠ Wanted Suspect Sighted', 'message': 'Sofia Reyes reported sighted at Harbor Front. Alert issued.',
+        {'title': 'Wanted Suspect Sighted', 'message': 'Rekha Pillai reported sighted in Secunderabad, Hyderabad. Alert issued.',
          'type': 'alert', 'role': 'investigating_officer'},
-        {'title': '📄 Report Generated', 'message': 'Criminal profile report for Marcus Vega has been generated.',
+        {'title': 'Report Generated', 'message': 'Criminal profile report for Vikram Malhotra has been generated.',
          'type': 'info', 'role': None},
     ]
 

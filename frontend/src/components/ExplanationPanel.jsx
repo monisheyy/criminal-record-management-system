@@ -26,6 +26,8 @@ export default function ExplanationPanel({ prediction, defaultOpen = false }) {
   const explanation = inputs.explanation || {};
   const features = explanation.top_features || [];
   const factors = inputs.risk_factors || [];
+  const method = inputs.risk_score_method || {};
+  const learned = method.type === 'learned_logistic_regression';
   const quality = inputs.feature_input_quality;
   const provenance = inputs.provenance;
   const similar = Array.isArray(prediction?.similar_criminals) ? prediction.similar_criminals : [];
@@ -73,7 +75,27 @@ export default function ExplanationPanel({ prediction, defaultOpen = false }) {
             that a feature caused this result, and they say nothing about an individual's guilt.
           </p>
 
-          {factors.length > 0 && (
+          {factors.length > 0 && (learned ? (
+            <>
+              <h3 className="form-label" style={{ margin: '14px 0 6px' }}>Danger score breakdown (learned model)</h3>
+              <div className="table-scroll">
+                <table className="compact-table">
+                  <thead><tr><th scope="col">Factor</th><th scope="col" className="num">Value used</th><th scope="col" className="num">Model weight</th><th scope="col" className="num">Effect on odds</th></tr></thead>
+                  <tbody>{factors.map((f) => (
+                    <tr key={f.key}>
+                      <td>{f.name}{f.imputed && <span className="badge badge-amber" style={{ marginLeft: 6 }}>not recorded</span>}</td>
+                      <td className="num mono">{f.normalized_value}</td><td className="num mono">{f.weight}</td>
+                      <td className="num mono">{f.contribution > 0 ? '+' : ''}{f.contribution}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <p className="td-sub" style={{ marginTop: 6 }}>
+                Score = chance of re-arrest within two years in the training data{method.holdout_roc_auc ? ` (holdout AUC ${method.holdout_roc_auc})` : ''}.
+                Positive effects raised it, negative lowered it. {method.disclaimer}
+              </p>
+            </>
+          ) : (
             <>
               <h3 className="form-label" style={{ margin: '14px 0 6px' }}>Prototype risk score breakdown (fixed weights)</h3>
               <div className="table-scroll">
@@ -85,7 +107,7 @@ export default function ExplanationPanel({ prediction, defaultOpen = false }) {
                 </table>
               </div>
             </>
-          )}
+          ))}
 
           <h3 className="form-label" style={{ margin: '14px 0 6px' }}>Similar records (retrieval context, not evidence)</h3>
           {similar.length > 0 ? (

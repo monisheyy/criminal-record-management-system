@@ -1,2 +1,2 @@
 
-backend/app/ml/data/demo_crime_training_v1.csv -text
+backend/app/ml/data/india_crime_training_v1.csv -text

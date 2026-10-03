@@ -56,11 +56,11 @@ test('officer registers a case and records victims, evidence, links and status',
   await page.getByRole('tab', { name: /Linked persons/ }).click();
   await page.getByRole('button', { name: 'Link record' }).click();
   const link = page.getByRole('dialog', { name: 'Link a person to this case' });
-  await link.getByLabel('Search offender records').fill('Vega');
-  await link.getByRole('button', { name: /Marcus Vega/ }).click();
+  await link.getByLabel('Search offender records').fill('Malhotra');
+  await link.getByRole('button', { name: /Vikram Malhotra/ }).click();
   await link.getByLabel('Role in case').selectOption('suspect');
   await link.getByRole('button', { name: 'Link record' }).click();
-  await expect(page.getByRole('link', { name: 'Marcus Vega' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Vikram Malhotra' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Change status' }).click();
   const status = page.getByRole('dialog', { name: 'Change case status' });
@@ -86,8 +86,8 @@ test('record clerk cannot reach AI review or admin screens', async ({ page }) =>
 test('admin runs an AI assessment and records a reasoned review', async ({ page }) => {
   await signIn(page, 'admin');
   await page.getByRole('link', { name: 'Offender Directory' }).click();
-  await page.getByLabel('Search records').fill('Volkov');
-  await page.getByRole('link', { name: /Open record for Dmitri Volkov/ }).click();
+  await page.getByLabel('Search records').fill('Naidu');
+  await page.getByRole('link', { name: /Open record for Suresh Naidu/ }).click();
   await expect(page.getByText('Unverified decision support, not evidence.').first()).toBeVisible();
   await page.getByRole('button', { name: 'Run assessment' }).click();
   await expect(page.getByText(/AI assessment created/)).toBeVisible();

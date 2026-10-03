@@ -15,6 +15,13 @@ CRIME_CATEGORIES = {
     "Arson": "Property", "Cybercrime": "Technology",
 }
 
+# Fictional demonstration gangs (see app/ml/data/generate_india_dataset.py).
+# The gang model's classes are these names plus "None".
+GANG_NAMES = [
+    "Kaala Bichhoo Gang", "Lal Toofan Crew", "Neela Saanp Syndicate",
+    "Teen Talwar Gang", "Patang Syndicate", "Kaali Billi Crew",
+]
+
 # Case files may be opened before the offence is classified.
 CASE_CRIME_TYPES = CRIME_TYPES + ["Other", "Unclassified"]
 

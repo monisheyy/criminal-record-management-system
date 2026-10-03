@@ -1,15 +1,15 @@
 # Model card — AI-CRMS crime-category and gang-affiliation classifiers
 
-> **Status: DEMONSTRATION ONLY.** The bundled models are trained on 600 rows of *synthetic* data. They have no established real-world validity and must not inform real investigative, charging, custody or risk decisions. Production configuration blocks them (`AI_ALLOW_SYNTHETIC_MODELS=false`).
+> **Status: DEMONSTRATION ONLY.** The bundled models are trained on 6,000 rows of *synthetic* India-themed data (fictional gangs, NCRB-informed crime mix, simulated re-arrest outcome; see `backend/app/ml/data/DATASET_SCHEMA.md`). They have no established real-world validity and must not inform real investigative, charging, custody or risk decisions. Production configuration blocks them (`AI_ALLOW_SYNTHETIC_MODELS=false`).
 
 ## Overview
 
 | | |
 |---|---|
-| Models | Random Forest crime-category classifier (15 classes); Random Forest gang-affiliation classifier (5 gangs + none) |
+| Models | Random Forest crime-category classifier (15 classes); Random Forest gang-affiliation classifier (6 fictional gangs + none); logistic-regression danger score (P(re-arrest within 2 years)) |
 | Pipeline version | 2.0 (`backend/app/ml/pipeline.py`) |
-| Training data | `backend/app/ml/data/demo_crime_training_v1.csv`, synthetic, SHA-256 pinned in `dataset_manifest.json` |
-| Outputs | Suggested crime category + uncalibrated score; gang-association score; a deterministic, fixed-weight *prototype* risk score (1–100) |
+| Training data | `backend/app/ml/data/india_crime_training_v1.csv`, synthetic, SHA-256 pinned in `dataset_manifest.json` |
+| Outputs | Suggested crime category + score; suggested gang + association score; danger score 1–100 = 1 + 99 × P(re-arrest within 2 years), with an exact per-factor breakdown (falls back to the fixed-weight prototype score when the dataset has no `reoffended_2y` outcome) |
 | Owner | System administrator(s) operating the Model Governance screen |
 
 ## Intended use
@@ -30,6 +30,16 @@ Computed at every training run and stored with the candidate (visible in Model G
 * **Calibration:** expected calibration error (10 bins), Brier score, reliability table. Optional sigmoid/isotonic calibration (`AI_CRMS_CALIBRATION`) is fitted on training data only; the gate measures the calibrated model. Displayed "confidence" values are still not validated real-world probabilities.
 * **Slices:** age band, gang membership, location-risk band, time of day, plus any `slice_*` group columns in the dataset (e.g. district) — with sample sizes; slices under 10 samples are not scored.
 
+### Results on the bundled synthetic data (time-based holdout: newest 1,200 incidents)
+
+| Model | Result | Baseline |
+|---|---|---|
+| Crime type | 50% accuracy, all 15 classes recognised | 11% (always guess the most common) |
+| Gang | 64% balanced accuracy; per-gang recall 40–73% | 14% (chance across 7 classes) |
+| Danger score | AUC 0.77, expected calibration error 0.01; observed re-arrest 23% / 45% / 68% / 86% in low / medium / high / critical | 43% base rate |
+
+These numbers show that the models learn the patterns *designed into* the synthetic data. They are not evidence of real-world accuracy.
+
 ## Release gate
 
 A candidate can be activated only if it is not trained on synthetic data **and** it passes the configurable gate (defaults: macro-F1 ≥ 0.60, balanced accuracy ≥ 0.60, no zero-recall classes, ECE ≤ 0.15, ≥ 100 holdout samples, beats the majority baseline), **and** an administrator records a written justification. Passing the gate is necessary, not sufficient.
@@ -40,7 +50,8 @@ A candidate can be activated only if it is not trained on synthetic data **and**
 * No protected attributes exist in the data, so fairness across protected groups is **unmeasured**. Historical police data typically reflects enforcement patterns, not underlying offending — a real dataset would risk reproducing those biases.
 * Global feature importance is not a causal or individual explanation.
 * Missing inputs fall back to defaults; outputs list which features were defaulted, and such outputs are especially unreliable.
-* The prototype risk score uses hand-chosen weights and has not been validated against any outcome.
+* The danger score is learned from a *simulated* outcome. Real use would need a real, lawfully obtained outcome (e.g. re-arrest records) and a fairness review; the score must never decide bail, custody or charging.
+* Without a `reoffended_2y` column, the fallback prototype score uses hand-chosen weights that have not been validated against any outcome.
 
 ## Requirements before any real-world use
 
