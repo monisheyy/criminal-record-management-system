@@ -20,9 +20,9 @@ from app.ml.pipeline import (
 def test_versioned_dataset_loads_and_validates():
     X, y_crime, y_gang, metadata = load_training_dataset()
     assert DATASET_PATH.exists()
-    assert X.shape == (600, len(FEATURE_COLUMNS))
-    assert len(y_crime) == 600
-    assert len(y_gang) == 600
+    assert X.shape == (6000, len(FEATURE_COLUMNS))
+    assert len(y_crime) == 6000
+    assert len(y_gang) == 6000
     assert metadata["dataset_type"] == "synthetic_demonstration"
     assert metadata["sha256"]
 
@@ -59,13 +59,15 @@ def test_missing_numeric_values_are_imputed():
     pipeline = CRMSMLPipeline()
     result = pipeline.train(X, y_crime, y_gang, save=False)
     assert pipeline.imputer is not None
-    assert result["crime_classifier"]["training_samples"] == 480
+    assert result["crime_classifier"]["training_samples"] == 4800
 
 
 def test_dataset_rejects_unknown_target_class(tmp_path: Path):
     source = DATASET_PATH.read_text(encoding="utf-8")
     lines = source.splitlines()
-    lines[1] = lines[1].rsplit(",", 1)[0] + ",UnknownGang"
+    cells = lines[1].split(",")
+    cells[12] = "UnknownGang"  # gang_label column
+    lines[1] = ",".join(cells)
     invalid = tmp_path / "invalid.csv"
     invalid.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -143,7 +145,7 @@ def test_evaluation_contains_per_class_and_distribution():
     result = pipeline.train(save=False)
     for key in ("crime_classifier", "gang_predictor"):
         evaluation = result[key]
-        assert evaluation["test_samples"] == 120
+        assert evaluation["test_samples"] == 1200
         assert len(evaluation["per_class"]) == len(evaluation["classes"])
         assert sum(evaluation["class_distribution"].values()) == evaluation["test_samples"]
         assert len(evaluation["confusion_matrix"]) == len(evaluation["classes"])

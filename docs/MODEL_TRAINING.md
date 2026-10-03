@@ -2,7 +2,7 @@
 
 This runbook takes the AI from the bundled synthetic demo data to a model that can pass the release gate. Every step runs from `backend/`. Read [MODEL_CARD.md](MODEL_CARD.md) and [FEATURE_CONTRACT.md](../backend/app/ml/FEATURE_CONTRACT.md) first.
 
-> The bundled demo dataset has **no learnable signal**: every model scores at chance level (macro-F1 ≈ 0.08–0.10 against 1/15 ≈ 0.07). No candidate trained on it can, or should, pass the gate. Real performance depends entirely on real data.
+> The bundled India demo dataset is **synthetic**: its patterns were designed in, so the models score well on it (about 50% crime accuracy against an 11% baseline, danger-score AUC 0.77), but that says nothing about real cases. Models trained on it can never be activated for real use. Real performance depends entirely on real data.
 
 ## 1. Define the task
 
@@ -27,6 +27,7 @@ Before you rely on it:
 - **Close cases with the final category.** Only `closed`/`archived` cases are used, and `Other`/`Unclassified` are skipped, so set `crime_type` to the verified outcome when closing.
 - **Record the Incident facts** (weapon, drugs, financial motive, technology) on every case. A feature that is never recorded carries no signal; the export warns about it.
 - **Link offenders with a role.** Features describe the case's `convicted` → `primary_offender` → `accused` → `accomplice` → `suspect` person, in that order; witnesses are never used.
+- **Danger score:** add a `reoffended_2y` column (1 = re-arrested within two years of the incident, from verified records) to train the learned danger score. The exporter cannot fill it in, because the system does not record outcomes yet, so without it the fixed-weight prototype score is used.
 - **Check `prior_convictions` for leakage.** It is the offender's *current* count, which can include the conviction for this very case. Where possible, reduce it to the count before the incident.
 
 ### Option B: an external dataset

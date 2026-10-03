@@ -101,7 +101,8 @@ def test_training_reports_calibration_subgroups_and_quality_gate():
     assert calibration["brier_score"] >= 0.0
     assert sum(b["count"] for b in calibration["reliability_table"]) == crime["test_samples"]
     slices = crime["subgroup_evaluation"]["slices"]
-    assert set(slices) == set(ml.SUBGROUP_SLICES)
+    # Operational slices plus the dataset's own slice_* columns (slice_state).
+    assert set(slices) == set(ml.SUBGROUP_SLICES) | {"state"}
     for groups in slices.values():
         assert sum(g["n"] for g in groups) <= crime["test_samples"]
     gate = metrics["quality_gate"]

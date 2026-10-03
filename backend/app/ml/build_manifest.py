@@ -24,11 +24,11 @@ from pathlib import Path
 from typing import Any
 
 from app.ml.pipeline import (
-    DATA_DIR, DATE_COLUMN, DatasetValidationError, FEATURE_COLUMNS, TARGET_COLUMNS,
+    DATA_DIR, DATE_COLUMN, OUTCOME_COLUMN, DatasetValidationError, FEATURE_COLUMNS, TARGET_COLUMNS,
     UNVALIDATED_DATASET_TYPES, load_training_dataset,
 )
 
-BUNDLED_DEMO_DATASET = (DATA_DIR / "demo_crime_training_v1.csv").resolve()
+BUNDLED_DEMO_DATASET = (DATA_DIR / "india_crime_training_v1.csv").resolve()
 # Guidance thresholds, reported as warnings (the release gate is the hard check).
 RECOMMENDED_ROWS_PER_CLASS = 100
 
@@ -73,6 +73,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
         "feature_columns": FEATURE_COLUMNS,
         "target_columns": TARGET_COLUMNS,
         "optional_columns": ([DATE_COLUMN] if meta["has_incident_dates"] else [])
+                            + ([OUTCOME_COLUMN] if meta.get("has_outcome") else [])
                             + [f"slice_{name}" for name in meta["slice_columns"]],
         "incident_date_range": meta.get("incident_date_range"),
         "crime_class_counts": meta["crime_class_counts"],

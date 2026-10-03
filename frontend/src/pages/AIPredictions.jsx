@@ -64,7 +64,7 @@ function ReviewModal({ prediction, status, onClose, onSubmitted }) {
             <div className="td-sub">Model score {formatScore(p.crime_type_confidence)} (uncalibrated)</div></div>
           <div className="stat-card"><span className="stat-label">Gang association</span><div className="stat-value-sm">
             {p.input_features?.gang_prediction_available === false ? 'Unavailable' : formatScore(p.gang_affiliation_probability)}</div></div>
-          <div className="stat-card"><span className="stat-label">Prototype risk score</span><div style={{ marginTop: 4 }}><RiskBadge score={p.risk_score} level={p.risk_level} showBar /></div></div>
+          <div className="stat-card"><span className="stat-label">Risk score</span><div style={{ marginTop: 4 }}><RiskBadge score={p.risk_score} level={p.risk_level} showBar /></div></div>
           <div className="stat-card"><span className="stat-label">Current decision</span><div style={{ marginTop: 4 }}><StatusBadge status={p.review_status} /></div>
             {p.override_crime_type && <div className="td-sub">Override: {p.override_crime_type}</div>}</div>
         </div>
