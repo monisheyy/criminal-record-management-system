@@ -1,15 +1,10 @@
 import React from 'react';
 
-export function getRiskColor(score) {
+function getRiskColor(score) {
   if (score >= 75) return 'critical';
   if (score >= 55) return 'high';
   if (score >= 35) return 'medium';
   return 'low';
-}
-
-export function getRiskBadgeClass(level) {
-  const map = { critical: 'badge-red', high: 'badge-orange', medium: 'badge-amber', low: 'badge-green' };
-  return map[level] || 'badge-gray';
 }
 
 export function RiskBadge({ score, level, showBar = false }) {

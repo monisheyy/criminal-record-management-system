@@ -12,8 +12,8 @@ Browser (React SPA) ──HTTPS──> nginx ──/api, /api/notifications/ws�
                          static assets                         ML artifacts (signed, verified before load)
 ```
 
-* **Backend** (`backend/`): FastAPI, SQLAlchemy 2, Alembic migrations, PyJWT sessions in HttpOnly cookies, role + object-level authorization, append-only HMAC-signed audit trail, scikit-learn pipeline with quality gates and artifact integrity checks, PDF/Excel reports.
-* **Frontend** (`frontend/`): React 19 + Vite, route-level code splitting and error boundaries, accessible dialogs/tables, server-side pagination.
+* **Backend** (`backend/`): FastAPI, SQLAlchemy 2, Alembic migrations, PyJWT sessions in HttpOnly cookies, role + object-level authorization, append-only HMAC-signed audit trail, scikit-learn pipeline with quality gates and artifact integrity checks, FIR-style PDF and Excel reports, offender photos and evidence files stored write-once under their SHA-256 (re-verified on every read).
+* **Frontend** (`frontend/`): React 19 + Vite, route-level code splitting and error boundaries, accessible dialogs/tables, server-side pagination, and an incident map of India (Leaflet + OpenStreetMap; case locations are placed with a built-in city gazetteer, so no geocoding service sees case data).
 * **Roles:** administrator, investigating officer, record clerk — see [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Quick start (development)
@@ -46,7 +46,7 @@ Use `localhost` (not `127.0.0.1`) for both servers so the session cookie is same
 ## Tests
 
 ```powershell
-cd backend;  pytest -q                      # 223 tests: API, authorization matrix, security, integrity, migrations, ML
+cd backend;  pytest -q                      # 274 tests: API, authorization matrix, security, integrity, uploads, migrations, ML
 cd frontend; npm run lint; npm test; npm run build
 cd frontend; npx playwright install chromium; npm run test:e2e   # real browser + real API
 .\VERIFY_AI_CRMS.ps1                        # everything above + dependency audits

@@ -359,6 +359,8 @@ class CriminalOut(CriminalBase):
     created_at: datetime
     updated_at: Optional[datetime]
     gang: Optional[GangOut] = None
+    # Set when a photo has been uploaded; served by GET /api/criminals/{id}/photo.
+    photo_sha256: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -498,6 +500,10 @@ class EvidenceOut(BaseModel):
     chain_of_custody: Optional[str]
     file_url: Optional[str]
     file_sha256: Optional[str] = None
+    # Set when the file itself is held in the system's file store.
+    file_content_type: Optional[str] = None
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -852,6 +858,33 @@ class NetworkGraphOut(BaseModel):
     nodes: List[NetworkNode]
     edges: List[NetworkEdge]
     metadata: NetworkMetadata
+
+
+class IncidentPoint(BaseModel):
+    case_id: int
+    case_number: str
+    title: str
+    crime_type: Optional[str] = None
+    crime_category: Optional[str] = None
+    status: str
+    priority: Optional[str] = None
+    location: str
+    city: str
+    precision: str
+    lat: float
+    lng: float
+    incident_date: Optional[datetime] = None
+
+
+class CityCount(BaseModel):
+    city: str
+    count: int
+
+
+class IncidentMapOut(BaseModel):
+    incidents: List[IncidentPoint]
+    by_city: List[CityCount]
+    unmapped: int
 
 
 # ── Password recovery schemas ────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Activity, Bell, BookOpen, Brain, CheckCheck, Database, FileText, KeyRound, LayoutDashboard,
-  Lock, LogOut, Shield, Siren, Users,
+  Lock, LogOut, MapPinned, Shield, Siren, Users,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { notificationsAPI } from '../services/api';
@@ -17,6 +17,7 @@ const NAV = [
   { section: 'Records', links: [
     { to: '/criminals', icon: Shield, label: 'Offender Directory', roles: ALL },
     { to: '/cases', icon: FileText, label: 'Cases & FIR Files', roles: ALL },
+    { to: '/map', icon: MapPinned, label: 'Incident Map', roles: ALL },
   ] },
   { section: 'Decision Support', links: [
     { to: '/ai-predictions', icon: Brain, label: 'AI Predictions (review)', roles: ['admin', 'investigating_officer'] },
