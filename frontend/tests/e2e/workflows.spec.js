@@ -125,3 +125,22 @@ test('admin sees model governance and a verified audit trail; logout ends the se
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
 });
+
+test('officer sees cases on the incident map and adds an offender photo', async ({ page }) => {
+  await signIn(page, 'officer1');
+  await page.getByRole('link', { name: 'Incident Map' }).click();
+  await expect(page.getByRole('heading', { name: 'Incident Map' })).toBeVisible();
+  const cities = page.locator('.city-list .city-row');
+  await expect(cities.first()).toBeVisible();
+  await expect(page.locator('.incident-map path.leaflet-interactive').first()).toBeVisible();
+  await cities.first().click();
+
+  await page.getByRole('link', { name: 'Offender Directory' }).click();
+  await page.getByLabel(/Search/).first().fill('Malhotra');
+  await page.getByRole('link', { name: 'Open record for Vikram Malhotra' }).click();
+  // A 1x1 PNG; the API checks the file's bytes, not its name.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await page.getByLabel('Choose a photo').setInputFiles({ name: 'mugshot.png', mimeType: 'image/png', buffer: png });
+  await expect(page.getByRole('img', { name: /Photo of Vikram Malhotra/ })).toBeVisible();
+  await signOut(page);
+});

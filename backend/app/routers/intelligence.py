@@ -1,4 +1,4 @@
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
-from app.security import require_officer_or_admin
+from app.security import require_any_role, require_officer_or_admin
+from app.utils import geo
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
 
@@ -193,3 +194,39 @@ async def get_network(
     current_user: models.User = Depends(require_officer_or_admin),
 ):
     return _build_network(db, current_user, criminal_id, case_id, gang_id, depth)
+
+
+@router.get("/incident-map", response_model=schemas.IncidentMapOut)
+async def get_incident_map(
+    status: Optional[schemas.CaseStatus] = Query(None),
+    crime_category: Optional[str] = Query(None, max_length=50),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_any_role),
+):
+    """Cases placed on a map of India from their recorded location.
+
+    Locations are resolved offline (app/utils/geo.py); cases whose place is not
+    in the gazetteer are counted as ``unmapped`` instead of being guessed.
+    """
+    q = db.query(models.Case)
+    if current_user.role.value == "investigating_officer":
+        q = q.filter((models.Case.assigned_officer_id == current_user.id) | (models.Case.assigned_officer_id.is_(None)))
+    if status:
+        q = q.filter(models.Case.status == status.value)
+    if crime_category:
+        q = q.filter(models.Case.crime_category == crime_category)
+    incidents, unmapped = [], 0
+    for case in q.order_by(models.Case.id).all():
+        place = geo.resolve(case.location, seed=case.case_number)
+        if not place:
+            unmapped += 1
+            continue
+        incidents.append({
+            "case_id": case.id, "case_number": case.case_number, "title": case.title,
+            "crime_type": case.crime_type, "crime_category": case.crime_category,
+            "status": case.status.value, "priority": case.priority, "location": case.location,
+            "incident_date": case.incident_date, **place,
+        })
+    counts = Counter(i["city"] for i in incidents)
+    by_city = [{"city": city, "count": n} for city, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    return {"incidents": incidents, "by_city": by_city, "unmapped": unmapped}

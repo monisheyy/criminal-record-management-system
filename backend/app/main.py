@@ -52,19 +52,43 @@ def disable_known_demo_credentials(db) -> int:
     return disabled
 
 
+# Arbitrary constant naming the PostgreSQL advisory lock taken at start-up.
+STARTUP_LOCK_ID = 7_310_442
+
+
+@asynccontextmanager
+async def startup_lock():
+    """Serialise start-up work across worker processes.
+
+    The Docker image runs several uvicorn workers; without this they would all
+    migrate and seed an empty database at once and the losers would crash on
+    unique constraints. SQLite deployments run a single process.
+    """
+    if engine.dialect.name != "postgresql":
+        yield
+        return
+    with engine.connect() as connection:
+        connection.execute(text("SELECT pg_advisory_lock(:id)"), {"id": STARTUP_LOCK_ID})
+        try:
+            yield
+        finally:
+            connection.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": STARTUP_LOCK_ID})
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Schema: auto-migrate in development/test; verify-only in production.
-    migrate_database(engine, allow_auto_upgrade=not settings.is_production)
-    db = SessionLocal()
-    try:
-        if settings.is_production:
-            disable_known_demo_credentials(db)
-        elif settings.seed_demo_data and db.query(models.User).count() == 0:
-            from seed_data import seed_database
-            seed_database(db)
-    finally:
-        db.close()
+    async with startup_lock():
+        # Schema: auto-migrate in development/test; verify-only in production.
+        migrate_database(engine, allow_auto_upgrade=not settings.is_production)
+        db = SessionLocal()
+        try:
+            if settings.is_production:
+                disable_known_demo_credentials(db)
+            elif settings.seed_demo_data and db.query(models.User).count() == 0:
+                from seed_data import seed_database
+                seed_database(db)
+        finally:
+            db.close()
     logger.info("AI-CRMS %s started (env=%s)", APP_VERSION, settings.app_env)
     yield
 

@@ -43,6 +43,7 @@ export default defineConfig({
         SECRET_KEY: 'e2e-only-secret-key-not-for-real-use-0123456789',
         DATABASE_URL: `sqlite:///${tmp}-db.sqlite`,
         AI_CRMS_MODEL_DIR: `${tmp}-models`,
+        AI_CRMS_UPLOAD_DIR: `${tmp}-uploads`,
         SEED_DEMO_DATA: 'true',
         CORS_ORIGINS: `http://localhost:${webPort}`,
         RATE_LIMIT_AUTH_PER_MINUTE: '1000',

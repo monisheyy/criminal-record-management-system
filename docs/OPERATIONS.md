@@ -54,7 +54,7 @@ Restore verifies checksum and integrity first and keeps a `*.pre-restore-*.db` s
 
 **PostgreSQL:** `pg_dump -Fc crms > crms-<stamp>.dump`; restore with `pg_restore --clean -d crms crms-<stamp>.dump`.
 
-**Policy to agree locally** (recommended starting point): daily backups retained 35 days + monthly retained 1 year, encrypted, stored off-host; RPO ≤ 24 h, RTO ≤ 4 h; quarterly restore drill into a scratch environment followed by `GET /api/health/ready` and `GET /api/admin/audit-logs/verify`. Also back up `AI_CRMS_MODEL_DIR` (active + candidate model artifacts).
+**Policy to agree locally** (recommended starting point): daily backups retained 35 days + monthly retained 1 year, encrypted, stored off-host; RPO ≤ 24 h, RTO ≤ 4 h; quarterly restore drill into a scratch environment followed by `GET /api/health/ready` and `GET /api/admin/audit-logs/verify`. Also back up `AI_CRMS_MODEL_DIR` (active + candidate model artifacts) and `AI_CRMS_UPLOAD_DIR` (offender photos and evidence files; each file is named by its SHA-256, so a restored copy can be verified against the database).
 
 ## 5. Secret rotation
 
