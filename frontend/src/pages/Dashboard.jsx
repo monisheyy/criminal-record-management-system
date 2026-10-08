@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -12,6 +12,7 @@ import {
 import { adminAPI, getErrorMessage, saveBlob } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { ErrorState, LoadingState } from '../components/ui';
+import { useApiQuery } from '../utils/useApiQuery';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, LineElement, PointElement, Filler, Tooltip, Legend);
 
@@ -60,20 +61,11 @@ function StatCard({ icon: Icon, value, label, subtext, onClick }) {
 export default function Dashboard() {
   const { user, isAdmin, isOfficer, isClerk } = useAuth();
   const navigate = useNavigate();
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const load = () => {
-    setLoading(true);
-    setError('');
-    adminAPI.dashboard()
-      .then((r) => setStats(r.data))
-      .catch((err) => setError(getErrorMessage(err, 'Failed to load dashboard statistics.')))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => { load(); }, []);
+  const { data: stats, loading, error, reload: load } = useApiQuery(adminAPI.dashboard, {
+    fallbackError: 'Failed to load dashboard statistics.',
+  });
+  // Read the clock once per visit, not on every render.
+  const [today] = useState(() => new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
 
   const exportAnalytics = async (format) => {
     try {
@@ -85,7 +77,7 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) return <LoadingState label="Loading dashboard…" minHeight="50vh" />;
+  if (loading && !stats) return <LoadingState label="Loading dashboard…" minHeight="50vh" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   const crimeEntries = Object.entries(stats?.crimes_by_type || {}).sort(([, a], [, b]) => b - a).slice(0, 8);
@@ -95,7 +87,6 @@ export default function Dashboard() {
   const totalCases = statusEntries.reduce((sum, [, v]) => sum + v, 0);
   const agreement = stats?.reviewed_predictions ? stats.reviewer_agreement_rate : null;
   const firstName = user?.full_name?.split(' ')[0] || user?.username;
-  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   const lineData = {
     labels: monthly.map((m) => m.month),

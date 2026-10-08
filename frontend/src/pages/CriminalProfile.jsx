@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Brain, ChevronLeft, Clock, Download, Edit2, FileText, History, Plus, Trash2 } from 'lucide-react';
@@ -7,9 +7,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { RiskBadge, StatusBadge } from '../components/RiskBadge';
 import { AIAdvisoryBanner, ConfirmDialog, ErrorState, FieldHint, LoadingState, Modal } from '../components/ui';
 import ExplanationPanel from '../components/ExplanationPanel';
+import ProfilePhoto from '../components/ProfilePhoto';
 import { CRIME_TYPES, GENDERS, THREAT_LEVELS } from '../utils/constants';
 import { formatDate, formatScore, todayInputValue } from '../utils/format';
 import { humanize } from '../utils/errors';
+import { useApiQuery } from '../utils/useApiQuery';
 
 const HISTORY_TYPES = ['arrest', 'charge', 'conviction', 'acquittal', 'release', 'parole', 'warrant_issued',
   'warrant_cleared', 'bail_granted', 'wanted_notice', 'sighting', 'associate_link', 'note'];
@@ -164,38 +166,30 @@ export default function CriminalProfile() {
   const { isAdmin, isOfficer, isClerk } = useAuth();
   const canUseAI = isAdmin || isOfficer;
 
-  const [profile, setProfile] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [predictions, setPredictions] = useState([]);
-  const [aiStatus, setAiStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [predicting, setPredicting] = useState(false);
   const [downloading, setDownloading] = useState('');
   const [dialog, setDialog] = useState(null);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [profileRes, histRes] = await Promise.all([criminalsAPI.get(id), criminalsAPI.history(id)]);
-      setProfile(profileRes.data);
-      setHistory(histRes.data || []);
-    } catch (err) {
-      setError(getErrorMessage(err, 'Failed to load the record.'));
-      setLoading(false);
-      return;
-    }
+  const loadRecord = useCallback(async () => {
+    const [profileRes, histRes] = await Promise.all([criminalsAPI.get(id), criminalsAPI.history(id)]);
+    let predictions = [];
+    let aiStatus = null;
     if (canUseAI) {
       // AI data is optional context: its failure must not hide the record itself.
       const [preds, status] = await Promise.allSettled([aiAPI.list({ criminal_id: id, limit: 5 }), aiAPI.status()]);
-      setPredictions(preds.status === 'fulfilled' ? preds.value.data || [] : []);
-      setAiStatus(status.status === 'fulfilled' ? status.value.data : null);
+      predictions = preds.status === 'fulfilled' ? preds.value.data || [] : [];
+      aiStatus = status.status === 'fulfilled' ? status.value.data : null;
     }
-    setLoading(false);
+    return { data: { profile: profileRes.data, history: histRes.data || [], predictions, aiStatus } };
   }, [id, canUseAI]);
-
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  const record = useApiQuery(loadRecord, { fallbackError: 'Failed to load the record.' });
+  const { loading, error, reload: fetchAll, setData } = record;
+  const profile = record.data?.profile ?? null;
+  const history = record.data?.history ?? [];
+  const predictions = record.data?.predictions ?? [];
+  const aiStatus = record.data?.aiStatus ?? null;
+  const setProfile = (next) => setData((d) => ({ ...d, profile: next }));
+  const setPredictions = (update) => setData((d) => ({ ...d, predictions: update(d.predictions) }));
 
   const handlePredict = async () => {
     setPredicting(true);
@@ -260,7 +254,7 @@ export default function CriminalProfile() {
 
       <div className="dossier-card">
         <div className="dossier-header">
-          <div className="dossier-avatar" aria-hidden="true">{initials}</div>
+          <ProfilePhoto profile={profile} initials={initials} onChange={(updated) => { setProfile(updated); fetchAll(); }} />
           <div className="dossier-info">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div className="dossier-name">{profile.first_name} {profile.last_name}</div>

@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getErrorMessage, notificationsAPI } from '../services/api';
 import { ErrorState, LoadingState } from '../components/ui';
 import { formatDate } from '../utils/format';
+import { useApiQuery } from '../utils/useApiQuery';
 import toast from 'react-hot-toast';
 import { Bell, AlertTriangle, Info, CheckCircle, Siren, User, FileText, CheckCheck } from 'lucide-react';
 
@@ -18,25 +19,14 @@ const cfg = (type) => TYPE_CONFIG[type] || TYPE_CONFIG.info;
 export default function Alerts() {
   const navigate = useNavigate();
 
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const fetchAlerts = useCallback(() => {
-    setLoading(true);
-    setError('');
-    notificationsAPI.list({ limit: 100 })
-      .then(r => setAlerts(r.data || []))
-      .catch((err) => setError(getErrorMessage(err, 'Failed to load alerts.')))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { fetchAlerts(); }, [fetchAlerts]);
+  const fetchAlerts = useCallback(() => notificationsAPI.list({ limit: 100 }), []);
+  const { data, setData: setAlerts, loading, error, reload } = useApiQuery(fetchAlerts, { fallbackError: 'Failed to load alerts.' });
+  const alerts = data || [];
 
   const handleMarkRead = async (id) => {
     try {
       await notificationsAPI.markRead(id);
-      setAlerts(prev => prev.map(a => a.id === id ? { ...a, is_read: true } : a));
+      setAlerts(prev => (prev || []).map(a => a.id === id ? { ...a, is_read: true } : a));
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to mark the alert as read.'));
     }
@@ -45,7 +35,7 @@ export default function Alerts() {
   const handleMarkAllRead = async () => {
     try {
       await notificationsAPI.markAllRead();
-      setAlerts(prev => prev.map(a => ({ ...a, is_read: true })));
+      setAlerts(prev => (prev || []).map(a => ({ ...a, is_read: true })));
       toast.success('All system alerts marked as read.');
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to mark alerts as read.'));
@@ -75,7 +65,7 @@ export default function Alerts() {
       </div>
 
       {loading ? <LoadingState label="Loading alerts…" />
-        : error ? <ErrorState message={error} onRetry={fetchAlerts} />
+        : error ? <ErrorState message={error} onRetry={reload} />
         : alerts.length === 0 ? (
         <div className="empty-state">
           <Bell size={32} style={{ opacity: 0.3 }} />

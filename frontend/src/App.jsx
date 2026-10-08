@@ -15,6 +15,7 @@ const Criminals = lazy(() => import('./pages/Criminals'));
 const CriminalProfile = lazy(() => import('./pages/CriminalProfile'));
 const Cases = lazy(() => import('./pages/Cases'));
 const CaseDetails = lazy(() => import('./pages/CaseDetails'));
+const IncidentMap = lazy(() => import('./pages/IncidentMap'));
 const AIPredictions = lazy(() => import('./pages/AIPredictions'));
 const Alerts = lazy(() => import('./pages/Alerts'));
 const AdminUsers = lazy(() => import('./pages/AdminUsers'));
@@ -32,6 +33,7 @@ const ROUTES = [
   { path: '/criminals/:id', element: <CriminalProfile />, roles: ALL_ROLES },
   { path: '/cases', element: <Cases />, roles: ALL_ROLES },
   { path: '/cases/:id', element: <CaseDetails />, roles: ALL_ROLES },
+  { path: '/map', element: <IncidentMap />, roles: ALL_ROLES },
   { path: '/ai-predictions', element: <AIPredictions />, roles: OFFICERS },
   { path: '/alerts', element: <Alerts />, roles: ALL_ROLES },
   { path: '/admin/users', element: <AdminUsers />, roles: ADMIN },

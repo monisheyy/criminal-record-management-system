@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Brain, CheckCircle2, RefreshCw, RotateCcw, ShieldCheck, XCircle } from 'lucide-react';
 import { aiAPI, getErrorMessage } from '../services/api';
 import { AIAdvisoryBanner, EmptyState, ErrorState, FieldHint, LoadingState, Modal } from '../components/ui';
 import { formatDate, formatScore } from '../utils/format';
 import { humanize } from '../utils/errors';
+import { useApiQuery } from '../utils/useApiQuery';
+
+// The registry and the serving status load together; status is optional context.
+const loadRegistry = () => Promise.all([aiAPI.models(), aiAPI.status().catch(() => ({ data: null }))])
+  .then(([modelsRes, statusRes]) => ({ data: { models: modelsRes.data || [], status: statusRes.data } }));
 
 const STATUS_BADGE = { active: 'badge-green', awaiting_review: 'badge-amber', retired: 'badge-gray' };
 
@@ -171,24 +176,15 @@ function JustifyModal({ title, action, model, onClose, onDone }) {
 }
 
 export default function AdminAIModels() {
-  const [models, setModels] = useState([]);
-  const [status, setStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { data, loading, error, reload: fetchModels } = useApiQuery(loadRegistry, {
+    fallbackError: 'Failed to load the model registry.',
+  });
+  const models = data?.models ?? [];
+  const status = data?.status ?? null;
   const [retraining, setRetraining] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [dialog, setDialog] = useState(null);
 
-  const fetchModels = useCallback(() => {
-    setLoading(true);
-    setError('');
-    Promise.all([aiAPI.models(), aiAPI.status().catch(() => ({ data: null }))])
-      .then(([modelsRes, statusRes]) => { setModels(modelsRes.data || []); setStatus(statusRes.data); })
-      .catch((err) => setError(getErrorMessage(err, 'Failed to load the model registry.')))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { fetchModels(); }, [fetchModels]);
 
   const handleRetrain = async () => {
     setRetraining(true);

@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Plus, Edit2, Trash2, X, Database } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { gangsAPI, getErrorMessage } from '../services/api';
-import { ConfirmDialog } from '../components/ui';
+import { ConfirmDialog, ErrorState } from '../components/ui';
+import { useApiQuery } from '../utils/useApiQuery';
 
 const THREAT_LEVELS = ['low', 'medium', 'high', 'critical'];
 
@@ -12,23 +13,14 @@ const EMPTY_FORM = {
 };
 
 export default function AdminGangs() {
-  const [gangs, setGangs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, error, reload: fetchGangs } = useApiQuery(gangsAPI.list, { fallbackError: 'Failed to load gangs.' });
+  const gangs = data || [];
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  const fetchGangs = useCallback(() => {
-    setLoading(true);
-    gangsAPI.list()
-      .then(r => setGangs(r.data || []))
-      .catch((err) => toast.error(getErrorMessage(err, 'Failed to load gangs.')))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { fetchGangs(); }, [fetchGangs]);
 
   const openCreate = () => {
     setEditing(null);
@@ -105,6 +97,8 @@ export default function AdminGangs() {
             <div className="spinner" style={{ marginBottom: 12 }} />
             <div className="empty-state-title">Loading gang database...</div>
           </div>
+        ) : error ? (
+          <ErrorState message={error} onRetry={fetchGangs} />
         ) : gangs.length === 0 ? (
           <div className="empty-state">
             <Database size={32} style={{ opacity: 0.3 }} />
