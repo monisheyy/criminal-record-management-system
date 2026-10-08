@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Eye, Plus, Search, Shield } from 'lucide-react';
-import { criminalsAPI, getErrorMessage, totalCount } from '../services/api';
+import { criminalsAPI, getErrorMessage } from '../services/api';
 import { getFieldErrors } from '../utils/errors';
 import { CRIME_TYPES, GENDERS, THREAT_LEVELS } from '../utils/constants';
 import { formatDate, todayInputValue } from '../utils/format';
+import { usePagedList } from '../utils/usePagedList';
 import { EmptyState, ErrorState, FieldError, LoadingState, Modal, Pagination } from '../components/ui';
 
 const PAGE_SIZE = 25;
@@ -35,25 +36,30 @@ function CreateCriminalModal({ onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
-  const [duplicates, setDuplicates] = useState([]);
+  // Live duplicate check, tagged with the names it was run for; a 409 on save replaces it.
+  const [liveCheck, setLiveCheck] = useState({ key: '', list: [] });
+  const [confirmedDuplicates, setDuplicates] = useState(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const first = useDebounced(form.first_name.trim());
   const last = useDebounced(form.last_name.trim());
   const dob = useDebounced(form.date_of_birth);
 
+  const checkKey = first.length < 2 || last.length < 2 ? '' : JSON.stringify([first, last, dob]);
   useEffect(() => {
-    if (first.length < 2 || last.length < 2) { setDuplicates([]); return; }
+    if (!checkKey) return undefined;
     let cancelled = false;
     criminalsAPI.checkDuplicate({ first_name: first, last_name: last, date_of_birth: dob || undefined })
-      .then((res) => { if (!cancelled) setDuplicates(res.data.duplicates || []); })
-      .catch(() => { if (!cancelled) setDuplicates([]); });
+      .then((res) => { if (!cancelled) setLiveCheck({ key: checkKey, list: res.data.duplicates || [] }); })
+      .catch(() => { if (!cancelled) setLiveCheck({ key: checkKey, list: [] }); });
     return () => { cancelled = true; };
-  }, [first, last, dob]);
+  }, [checkKey, first, last, dob]);
+  const duplicates = confirmedDuplicates ?? (checkKey && liveCheck.key === checkKey ? liveCheck.list : []);
 
   const set = (key) => (e) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setForm((f) => ({ ...f, [key]: value }));
     setFieldErrors((errs) => ({ ...errs, [key]: undefined }));
+    if (['first_name', 'last_name', 'date_of_birth'].includes(key)) setDuplicates(null);
   };
 
   const submit = async (e) => {
@@ -191,29 +197,12 @@ function CreateCriminalModal({ onClose, onCreated }) {
 }
 
 export default function Criminals() {
-  const [rows, setRows] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ crime_type: '', threat_level: '', is_wanted: '', sort: '' });
   const [creating, setCreating] = useState(false);
   const debouncedSearch = useDebounced(search.trim());
-  const requestRef = useRef(0);
-
-  const load = useCallback(() => {
-    const requestId = ++requestRef.current; // ignore responses that arrive out of order
-    setLoading(true);
-    setError('');
-    criminalsAPI.list({ search: debouncedSearch, ...filters, skip: page * PAGE_SIZE, limit: PAGE_SIZE })
-      .then((res) => { if (requestId === requestRef.current) { setRows(res.data || []); setTotal(totalCount(res)); } })
-      .catch((err) => { if (requestId === requestRef.current) setError(getErrorMessage(err, 'Failed to load records.')); })
-      .finally(() => { if (requestId === requestRef.current) setLoading(false); });
-  }, [debouncedSearch, filters, page]);
-
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(0); }, [debouncedSearch, filters]);
+  const list = usePagedList(criminalsAPI.list, { search: debouncedSearch, ...filters }, PAGE_SIZE);
+  const { rows, total, page, setPage, loading, error, reload: load } = list;
 
   const setFilter = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
 

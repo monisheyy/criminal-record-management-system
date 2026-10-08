@@ -415,3 +415,31 @@ tbody tr:hover { background: #FAFAFC; }
 /* Tiles nested inside a card sit flat on a light fill (no shadow-on-shadow). */
 .card .stat-card { box-shadow: none; background: var(--fill); }
 .card .stat-card:hover { box-shadow: none; }
+
+/* ── Incident map ─────────────────────────────────────────────────────────── */
+.incident-map-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start; }
+.incident-map-card { padding: 0; overflow: hidden; }
+.incident-map { height: 620px; width: 100%; background: var(--fill); }
+.incident-map-side .card { margin-bottom: 16px; padding: 22px; }
+.incident-map-side .card-title { margin-bottom: 12px; }
+.city-list, .map-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.city-row { display: grid; grid-template-columns: 96px 1fr 28px; gap: 10px; align-items: center; width: 100%;
+  background: none; border: 0; padding: 6px 4px; border-radius: var(--radius-sm); color: var(--text-primary);
+  font: inherit; font-size: 0.88rem; text-align: left; cursor: pointer; }
+.city-row:hover, .city-row:focus-visible { background: var(--fill); }
+.city-row .td-mono { text-align: right; }
+.city-bar { height: 7px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.city-bar span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.map-legend li { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center; font-size: 0.88rem; }
+.map-dot { width: 10px; height: 10px; border-radius: 50%; }
+.map-popup { display: grid; gap: 3px; font-size: 0.85rem; min-width: 200px; }
+@media (max-width: 1000px) {
+  .incident-map-layout { grid-template-columns: 1fr; }
+  .incident-map { height: 440px; }
+}
+
+/* ── Offender photo ───────────────────────────────────────────────────────── */
+.profile-photo { width: 96px; height: 120px; border-radius: 10px; object-fit: cover; background: var(--fill); flex: none; }
+.profile-photo-wrap { display: grid; gap: 6px; justify-items: center; flex: none; }
+.profile-photo-actions { display: flex; gap: 4px; }
+.profile-photo-actions .btn { padding: 3px 8px; font-size: 0.75rem; }

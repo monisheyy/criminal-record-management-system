@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { CheckCircle, Edit2, Lock, Trash2, Unlock, UserPlus, XCircle } from 'lucide-react';
 import { adminAPI, getErrorMessage } from '../services/api';
@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ConfirmDialog, ErrorState, FieldHint, LoadingState, Modal } from '../components/ui';
 import { PASSWORD_MIN_LENGTH, ROLE_LABELS } from '../utils/constants';
 import { formatDate } from '../utils/format';
+import { useApiQuery } from '../utils/useApiQuery';
 
 const ROLE_BADGE = { admin: 'badge-red', investigating_officer: 'badge-blue', record_clerk: 'badge-gray' };
 const EMPTY_FORM = { username: '', email: '', full_name: '', password: '', role: 'record_clerk', badge_number: '', department: '' };
@@ -85,22 +86,12 @@ function UserModal({ editing, onClose, onSaved }) {
 
 export default function AdminUsers() {
   const { user: me } = useAuth();
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [modal, setModal] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
-  const fetchUsers = useCallback(() => {
-    setLoading(true);
-    setError('');
-    adminAPI.users()
-      .then((r) => setUsers(r.data || []))
-      .catch((err) => setError(getErrorMessage(err, 'Failed to load users.')))
-      .finally(() => setLoading(false));
-  }, []);
+  const { data, loading, error, reload: fetchUsers } = useApiQuery(adminAPI.users, { fallbackError: 'Failed to load users.' });
+  const users = data || [];
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   const update = async (u, payload, message) => {
     try {
