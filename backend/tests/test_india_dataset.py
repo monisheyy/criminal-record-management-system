@@ -57,9 +57,14 @@ def test_more_priors_mean_a_higher_danger_score():
 
 def test_only_stale_demo_models_are_retrained_automatically():
     current = ml._dataset_sha256(ml.DATASET_PATH)
-    demo = {"dataset": {"dataset_type": "synthetic_demonstration", "sha256": "0" * 64}}
+    demo = {"pipeline_version": ml.PIPELINE_VERSION,
+            "dataset": {"dataset_type": "synthetic_demonstration", "sha256": "0" * 64}}
     assert ml.CRMSMLPipeline._is_stale_demo_model(demo)
-    assert not ml.CRMSMLPipeline._is_stale_demo_model({"dataset": {**demo["dataset"], "sha256": current}})
-    real = {"dataset": {"dataset_type": "authorized_historical", "sha256": "0" * 64}}
+    fresh = {**demo, "dataset": {**demo["dataset"], "sha256": current}}
+    assert not ml.CRMSMLPipeline._is_stale_demo_model(fresh)
+    # A demo model from an older pipeline is retrained with the current models.
+    assert ml.CRMSMLPipeline._is_stale_demo_model({**fresh, "pipeline_version": "2.0"})
+    real = {"pipeline_version": "2.0", "dataset": {"dataset_type": "authorized_historical", "sha256": "0" * 64}}
     assert not ml.CRMSMLPipeline._is_stale_demo_model(real)
     assert not np.isnan(ml.CRMSMLPipeline().predict({})["risk_score"])
+
