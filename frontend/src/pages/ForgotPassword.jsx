@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, KeyRound, Shield } from 'lucide-react';
+import { ArrowLeft, KeyRound } from 'lucide-react';
+import seal from '../assets/brand/crms-seal.svg';
 import { authAPI, getErrorMessage } from '../services/api';
 import { FieldHint } from '../components/ui';
 import { PASSWORD_MIN_LENGTH } from '../utils/constants';
@@ -52,7 +53,7 @@ export default function ForgotPassword() {
     <main className="auth-page">
       <div className="auth-card">
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div className="auth-logo" aria-hidden="true"><Shield size={20} /></div>
+          <img className="auth-emblem" src={seal} alt="" aria-hidden="true" width="56" height="56" />
           <h1 className="auth-title">Account recovery</h1>
           <p className="auth-subtitle">{STEP_LABEL[step]}</p>
         </div>
