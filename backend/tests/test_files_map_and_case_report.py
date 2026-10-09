@@ -55,6 +55,30 @@ def officer_id(client, token):
     return client.get("/api/auth/me", headers=auth(token)).json()["id"]
 
 
+def test_sample_photos_fill_only_missing_photos_by_gender(client, admin_token, clerk_token, db):
+    from app.utils.sample_photos import assign_sample_photos
+
+    woman = make_criminal(client, admin_token, "Meera", "Woman")
+    client.put(f"/api/criminals/{woman['id']}", json={"gender": "Female"}, headers=auth(admin_token))
+    man = make_criminal(client, admin_token, "Tarun", "Bhatt")
+    own = make_criminal(client, admin_token, "Own", "Photo")
+    image = png_bytes(10, 200, 10)
+    assert upload(client, f"/api/criminals/{own['id']}/photo", clerk_token, image).status_code == 200
+
+    assert assign_sample_photos(db) >= 2
+    db.commit()
+    rows = {c.id: c for c in db.query(models.Criminal).filter(models.Criminal.id.in_([woman["id"], man["id"], own["id"]]))}
+    assert rows[own["id"]].photo_sha256 == hashlib.sha256(image).hexdigest(), "existing photos must be kept"
+    assert rows[woman["id"]].photo_sha256 != rows[man["id"]].photo_sha256
+
+    r = client.get(f"/api/criminals/{woman['id']}/photo", headers=auth(admin_token))
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    female_hashes = {hashlib.sha256(p.read_bytes()).hexdigest()
+                     for p in (file_store.Path(__file__).parents[1] / "app" / "sample_photos").glob("female-*.jpg")}
+    assert hashlib.sha256(r.content).hexdigest() in female_hashes
+    assert assign_sample_photos(db) == 0, "a second run must not change anything"
+
+
 # ── Offender photos ──────────────────────────────────────────────────────────
 def test_photo_upload_round_trip_and_audit(client, clerk_token, admin_token, db):
     c = make_criminal(client, admin_token)

@@ -519,3 +519,79 @@ tbody tr:hover { background: #FAFAFC; }
 .route-curtain[data-phase='reveal'] .route-curtain-rule { opacity: 0; transition: opacity 240ms ease; }
 @keyframes crms-shimmer { from { background-position: 130% 0; } to { background-position: -30% 0; } }
 @media (prefers-reduced-motion: reduce) { .route-curtain { display: none; } }
+
+/* ── Offender pop-up card (Criminals directory) ──────────────────────────── */
+.row-clickable { cursor: pointer; }
+.person-avatar-photo { object-fit: cover; object-position: 50% 28%; background: #1f2633; }
+.person-link { background: none; border: 0; padding: 0; font: inherit; text-align: left; cursor: pointer; }
+.person-link:hover { color: var(--accent); }
+.person-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.qv-overlay {
+  position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(16, 24, 40, 0.55), rgba(4, 7, 14, 0.78));
+  backdrop-filter: blur(14px) saturate(120%); -webkit-backdrop-filter: blur(14px) saturate(120%);
+  animation: fade 180ms ease;
+}
+.qv-card {
+  --qv-text: #f2f3f6; --qv-muted: rgba(235, 238, 245, 0.55); --qv-line: rgba(255, 255, 255, 0.1); --qv-gold: #d4b062;
+  width: min(900px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+  display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 8px; padding: 12px;
+  color: var(--qv-text); border-radius: 30px;
+  background: linear-gradient(155deg, rgba(44, 52, 70, 0.82), rgba(16, 20, 32, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(30px) saturate(150%); -webkit-backdrop-filter: blur(30px) saturate(150%);
+  animation: sheet 240ms cubic-bezier(.25, .8, .25, 1);
+}
+.qv-media { position: relative; }
+.qv-photo {
+  display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 22px;
+  background: #1a202c; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08); animation: fade 220ms ease;
+}
+.qv-photo-empty { display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--qv-muted); }
+.qv-photo-empty span { font-size: 4rem; font-weight: 600; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.75); }
+.qv-photo-empty small { font-size: 0.8rem; }
+
+.qv-info { display: flex; flex-direction: column; padding: 14px 14px 10px 22px; min-width: 0; }
+.qv-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.qv-crn { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.78rem; letter-spacing: 0.08em; color: var(--qv-gold); }
+.qv-name { margin: 14px 0 0; font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; color: var(--qv-text); }
+.qv-alias { margin: 6px 0 0; color: var(--qv-muted); font-size: 0.95rem; }
+
+.qv-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.qv-tag {
+  padding: 5px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; text-transform: capitalize;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--qv-text);
+}
+.qv-tag-wanted { background: rgba(255, 69, 58, 0.18); border-color: rgba(255, 69, 58, 0.45); color: #ff8a80; }
+.qv-threat-low { color: #7ee2a0; } .qv-threat-medium { color: #ffc764; }
+.qv-threat-high { color: #ff9f5a; } .qv-threat-critical { color: #ff7b72; }
+
+.qv-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; margin: 26px 0 0; padding: 22px 0 0; border-top: 1px solid var(--qv-line); }
+.qv-facts dt { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--qv-muted); }
+.qv-facts dd { margin: 4px 0 0; font-size: 0.98rem; font-weight: 500; color: var(--qv-text); overflow-wrap: anywhere; }
+.qv-facts .qv-wide { grid-column: 1 / -1; }
+
+.qv-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 24px; }
+.qv-pager { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--qv-muted); }
+.qv-icon-btn {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--qv-text);
+  transition: background 150ms ease;
+}
+.qv-icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+.qv-icon-btn:disabled { opacity: 0.35; cursor: default; }
+.qv-open {
+  display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 999px;
+  font-size: 0.85rem; font-weight: 600; color: #141821; background: var(--qv-gold); text-decoration: none;
+}
+.qv-open:hover { background: #e2c179; color: #141821; }
+.qv-card :focus-visible { outline: 2px solid var(--qv-gold); outline-offset: 2px; }
+
+@media (max-width: 720px) {
+  .qv-card { grid-template-columns: 1fr; border-radius: 24px; }
+  .qv-photo { aspect-ratio: auto; height: 42vh; object-position: 50% 30%; }
+  .qv-info { padding: 12px 8px 6px; }
+}
+@media (prefers-reduced-motion: reduce) { .qv-overlay, .qv-card, .qv-photo { animation: none; } }

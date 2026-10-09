@@ -98,6 +98,23 @@ async def save_upload(upload: UploadFile, allowed_types: set, max_bytes: int) ->
         raise
 
 
+def save_bytes(data: bytes, allowed_types: set) -> Tuple[str, str]:
+    """Store in-memory bytes (used for bundled demo files). Returns ``(sha256, content_type)``."""
+    content_type = sniff_content_type(data[:16])
+    if content_type not in allowed_types:
+        raise ValueError("unsupported file type")
+    sha256 = hashlib.sha256(data).hexdigest()
+    target = _path_for(sha256)
+    if not target.exists():
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(dir=UPLOAD_DIR, prefix=".incoming-")
+        with os.fdopen(fd, "wb") as out:
+            out.write(data)
+        os.replace(tmp_name, target)
+        os.chmod(target, 0o440)
+    return sha256, content_type
+
+
 def read_verified(sha256: str) -> Optional[bytes]:
     """Return the stored bytes, or ``None`` if missing or no longer matching the hash."""
     path = _path_for(sha256)
