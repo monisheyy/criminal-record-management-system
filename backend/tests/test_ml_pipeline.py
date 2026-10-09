@@ -151,7 +151,7 @@ def test_evaluation_contains_per_class_and_distribution():
         assert len(evaluation["confusion_matrix"]) == len(evaluation["classes"])
 
 
-def test_prediction_explanation_matches_random_forest_importances(tmp_path):
+def test_prediction_explanation_matches_permutation_importances(tmp_path):
     from app.ml.pipeline import CRMSMLPipeline, FEATURE_COLUMNS
 
     pipeline = CRMSMLPipeline()
@@ -169,12 +169,14 @@ def test_prediction_explanation_matches_random_forest_importances(tmp_path):
     }
     result = pipeline.predict(data)
     explanation = result["input_features"]["explanation"]
-    expected = dict(zip(FEATURE_COLUMNS, pipeline.crime_classifier.feature_importances_))
-    assert explanation["method"] == "global_random_forest_feature_importance"
+    stored = pipeline.training_metadata["feature_importances"]
+    total = sum(stored.values())
+    assert total > 0
+    assert explanation["method"] == "global_permutation_importance"
     assert explanation["model_version"] == pipeline.model_version
     assert len(explanation["all_features"]) == len(FEATURE_COLUMNS)
     for row in explanation["all_features"]:
-        assert row["relative_importance"] == round(float(expected[row["feature"]]), 6)
+        assert row["relative_importance"] == round(stored[row["feature"]] / total, 6)
     assert explanation["top_features"] == sorted(
         explanation["all_features"],
         key=lambda item: (-item["relative_importance"], item["feature"]),
@@ -400,3 +402,26 @@ def test_candidate_activation_rejects_legacy_or_incompatible_feature_schema(tmp_
     finally:
         import shutil
         shutil.rmtree(candidate_dir, ignore_errors=True)
+
+
+def test_crime_prediction_returns_ranked_top_suggestions():
+    from app.ml.pipeline import CRMSMLPipeline, TOP_K_SUGGESTIONS
+
+    pipeline = CRMSMLPipeline()
+    metrics = pipeline.train(save=False)
+    assert metrics["crime_classifier"][f"top_{TOP_K_SUGGESTIONS}_accuracy"] >= metrics["crime_classifier"]["accuracy"]
+    result = pipeline.predict({"prior_convictions": 1, "violence_history": 0, "time_of_crime": 23})
+    candidates = result["crime_type_candidates"]
+    assert len(candidates) == TOP_K_SUGGESTIONS
+    assert candidates[0]["crime_type"] == result["predicted_crime_type"]
+    assert [c["score"] for c in candidates] == sorted((c["score"] for c in candidates), reverse=True)
+    assert result["input_features"]["crime_type_candidates"] == candidates
+
+
+def test_derived_features_treat_late_evening_and_early_morning_as_night():
+    from app.ml.pipeline import add_derived_features
+
+    hours = np.array([[0.0, 3], [4, 0], [5, 1], [12, 2], [19, 0], [20, 5], [23, 0]])
+    derived = add_derived_features(hours, hour_index=0, associates_index=1)
+    assert derived[:, 2].tolist() == [1, 1, 0, 0, 0, 1, 1]
+    assert np.allclose(derived[:, 3], np.log1p(hours[:, 1]))
