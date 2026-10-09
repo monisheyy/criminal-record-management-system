@@ -1,7 +1,8 @@
 """AI-CRMS machine-learning pipeline.
 
-The runtime prediction path is intentionally kept compatible with the original
-Random Forest artifacts and feature schema. Training now reads a versioned,
+The runtime prediction path keeps the eleven-feature input schema and can
+still load pipeline-2.0 Random Forest artifacts; demo models from older
+pipelines are retrained automatically on startup. Training now reads a versioned,
 validated dataset from ``app/ml/data`` instead of generating rows in memory.
 
 The bundled dataset is synthetic demonstration data only; it contains no real
@@ -28,10 +29,11 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import brier_score_loss, make_scorer, roc_auc_score, accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+from sklearn.inspection import permutation_importance
+from sklearn.metrics import brier_score_loss, make_scorer, roc_auc_score, top_k_accuracy_score, accuracy_score, balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit, cross_validate, train_test_split
 from sklearn.pipeline import Pipeline as SklearnPipeline
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import FunctionTransformer, LabelEncoder, StandardScaler
 
 logger = logging.getLogger("ai_crms.ml")
 
@@ -52,7 +54,7 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 RANDOM_SEED = 42
 TEST_SIZE = 0.20
 DATASET_VERSION = "1.0"
-PIPELINE_VERSION = "2.0"
+PIPELINE_VERSION = "3.0"
 CV_FOLDS = 5
 # Optional probability calibration of the crime classifier: none | sigmoid | isotonic.
 # Choose it with evidence from `python -m app.ml.compare_models`, not by default.
@@ -93,6 +95,15 @@ FEATURE_COLUMNS = [
 # proxy for that target and must not be included as a predictor for that model.
 GANG_FEATURE_COLUMNS = [name for name in FEATURE_COLUMNS if name != "is_gang_member"]
 GANG_FEATURE_INDICES = [FEATURE_COLUMNS.index(name) for name in GANG_FEATURE_COLUMNS]
+# Derived inside the crime and gang models from the raw inputs above, so the
+# feature contract, stored predictions and exported datasets are unchanged:
+#  - night_incident: 1 when the hour is 20:00-04:59. Hour of day is circular
+#    (23 and 0 are neighbours), which a linear model cannot learn from the raw hour;
+#  - log_associates: log(1 + associates), so a few very large crews don't dominate.
+DERIVED_FEATURE_COLUMNS = ["night_incident", "log_associates"]
+NIGHT_START_HOUR, NIGHT_END_HOUR = 20, 5
+# Number of ranked crime suggestions shown to a reviewer and scored as top-k accuracy.
+TOP_K_SUGGESTIONS = 3
 TARGET_COLUMNS = ["crime_type", "gang_label"]
 # Optional dataset columns that are never model inputs:
 #  - incident_date (ISO 8601) switches evaluation to a time-based holdout
@@ -503,7 +514,44 @@ def holdout_split(y_encoded: np.ndarray, incident_dates: Optional[np.ndarray] = 
     return train_idx, test_idx, "stratified"
 
 
-def crime_estimator() -> RandomForestClassifier:
+def add_derived_features(X: np.ndarray, hour_index: int, associates_index: int) -> np.ndarray:
+    """Append DERIVED_FEATURE_COLUMNS to imputed (unscaled) model inputs."""
+    X = np.asarray(X, dtype=float)
+    hour = X[:, hour_index]
+    night = ((hour >= NIGHT_START_HOUR) | (hour < NIGHT_END_HOUR)).astype(float)
+    log_associates = np.log1p(np.clip(X[:, associates_index], 0.0, None))
+    return np.column_stack([X, night, log_associates])
+
+
+def _linear_estimator(columns: Sequence[str]) -> SklearnPipeline:
+    return SklearnPipeline([
+        ("derive", FunctionTransformer(add_derived_features, kw_args={
+            "hour_index": list(columns).index("time_of_crime"),
+            "associates_index": list(columns).index("associates_count"),
+        })),
+        ("scaler", StandardScaler()),
+        ("model", LogisticRegression(max_iter=4000, C=1.0)),
+    ])
+
+
+def crime_estimator() -> SklearnPipeline:
+    """Crime-type model: multinomial logistic regression with derived features.
+
+    Takes imputed, unscaled inputs. Chosen with `python -m app.ml.compare_models`
+    (development folds only): on the bundled data it beat the previous Random
+    Forest on accuracy, macro-F1 and top-3 accuracy, and it is close to the best
+    any model can do there (see docs/MODEL_CARD.md).
+    """
+    return _linear_estimator(FEATURE_COLUMNS)
+
+
+def gang_estimator() -> SklearnPipeline:
+    """Gang model: same design on the gang features (no is_gang_member)."""
+    return _linear_estimator(GANG_FEATURE_COLUMNS)
+
+
+def random_forest_estimator() -> RandomForestClassifier:
+    """The pipeline-2.0 crime model, kept as a comparison candidate."""
     return RandomForestClassifier(n_estimators=150, max_depth=10, random_state=RANDOM_SEED, class_weight="balanced")
 
 
@@ -647,15 +695,15 @@ class CRMSMLPipeline:
         self.imputer = SimpleImputer(strategy="median")
         X_crime_train = self.imputer.fit_transform(X[crime_train_idx])
         X_crime_test = self.imputer.transform(X[crime_test_idx])
-        self.scaler = StandardScaler()
-        X_crime_train_scaled = self.scaler.fit_transform(X_crime_train)
-        X_crime_test_scaled = self.scaler.transform(X_crime_test)
+        # The fitted scaler serves similar-record retrieval. The models scale
+        # their own (derived) inputs, so they are fitted on imputed values.
+        self.scaler = StandardScaler().fit(X_crime_train)
 
         y_crime_train = y_crime_enc[crime_train_idx]
         y_crime_test = y_crime_enc[crime_test_idx]
         self.crime_classifier = crime_estimator()
-        self.crime_classifier.fit(X_crime_train_scaled, y_crime_train)
-        raw_test_proba = self.crime_classifier.predict_proba(X_crime_test_scaled)
+        self.crime_classifier.fit(X_crime_train, y_crime_train)
+        raw_test_proba = self.crime_classifier.predict_proba(X_crime_test)
         # The calibrator (if any) is what serves predictions, so it is also what
         # the holdout metrics and quality gate measure. The plain forest is kept
         # for its global feature importances.
@@ -666,12 +714,12 @@ class CRMSMLPipeline:
             if min_train_class >= CALIBRATION_CV:
                 self.crime_calibrator = CalibratedClassifierCV(
                     crime_estimator(), method=calibration, cv=CALIBRATION_CV
-                ).fit(X_crime_train_scaled, y_crime_train)
+                ).fit(X_crime_train, y_crime_train)
             else:
                 calibration_note = (f"Calibration skipped: every class needs at least {CALIBRATION_CV} "
                                     f"training rows (smallest has {min_train_class}).")
         if self.crime_calibrator is not None:
-            test_proba = self.crime_calibrator.predict_proba(X_crime_test_scaled)
+            test_proba = self.crime_calibrator.predict_proba(X_crime_test)
         else:
             test_proba = raw_test_proba
         crime_pred = test_proba.argmax(axis=1)
@@ -679,6 +727,8 @@ class CRMSMLPipeline:
             y_crime_test, crime_pred, len(crime_train_idx), len(crime_test_idx),
             self.label_encoder_crime.classes_
         )
+        crime_metrics[f"top_{TOP_K_SUGGESTIONS}_accuracy"] = float(top_k_accuracy_score(
+            y_crime_test, test_proba, k=TOP_K_SUGGESTIONS, labels=np.arange(len(self.label_encoder_crime.classes_))))
         crime_metrics["calibration"] = expected_calibration_error(y_crime_test, test_proba)
         crime_metrics["calibration"]["method"] = calibration if self.crime_calibrator is not None else "none"
         if self.crime_calibrator is not None:
@@ -706,24 +756,20 @@ class CRMSMLPipeline:
         gang_imputer = SimpleImputer(strategy="median")
         X_gang_train = gang_imputer.fit_transform(X_gang[gang_train_idx])
         X_gang_test = gang_imputer.transform(X_gang[gang_test_idx])
-        gang_scaler = StandardScaler()
-        X_gang_train_scaled = gang_scaler.fit_transform(X_gang_train)
-        X_gang_test_scaled = gang_scaler.transform(X_gang_test)
-        self.gang_predictor = RandomForestClassifier(
-            n_estimators=100, max_depth=8, random_state=RANDOM_SEED, class_weight="balanced"
-        )
-        self.gang_predictor.fit(X_gang_train_scaled, y_gang_enc[gang_train_idx])
-        gang_pred = self.gang_predictor.predict(X_gang_test_scaled)
+        gang_scaler = StandardScaler().fit(X_gang_train)
+        self.gang_predictor = gang_estimator()
+        self.gang_predictor.fit(X_gang_train, y_gang_enc[gang_train_idx])
+        gang_pred = self.gang_predictor.predict(X_gang_test)
         gang_metrics = self._metrics(
             y_gang_enc[gang_test_idx], gang_pred, len(gang_train_idx), len(gang_test_idx),
             self.label_encoder_gang.classes_
         )
         gang_metrics["calibration"] = expected_calibration_error(
-            y_gang_enc[gang_test_idx], self.gang_predictor.predict_proba(X_gang_test_scaled)
+            y_gang_enc[gang_test_idx], self.gang_predictor.predict_proba(X_gang_test)
         )
         gang_metrics["cross_validation"] = self._cross_validation(
             X_gang, y_gang_enc, self.label_encoder_gang.classes_,
-            RandomForestClassifier(n_estimators=100, max_depth=8, random_state=RANDOM_SEED, class_weight="balanced"),
+            gang_estimator(),
             order=np.argsort(incident_dates, kind="stable") if time_ordered else None,
         )
 
@@ -749,9 +795,16 @@ class CRMSMLPipeline:
                     len(crime_train_idx),
                 )
 
+        # Model-agnostic global importance: how much holdout accuracy drops when
+        # one input is shuffled (derived features move with their source input).
+        serving_crime_model = self.crime_calibrator if self.crime_calibrator is not None else self.crime_classifier
+        permutation = permutation_importance(
+            serving_crime_model, X_crime_test, y_crime_test, scoring="accuracy",
+            n_repeats=5, random_state=RANDOM_SEED, n_jobs=1,
+        )
         feature_importances = {
-            feature: round(float(value), 8)
-            for feature, value in zip(FEATURE_COLUMNS, self.crime_classifier.feature_importances_)
+            feature: round(max(float(value), 0.0), 8)
+            for feature, value in zip(FEATURE_COLUMNS, permutation.importances_mean)
         }
 
         dataset_hash = dataset_meta.get("sha256") or "external"
@@ -770,6 +823,11 @@ class CRMSMLPipeline:
             "holdout_split": split_kind,
             "calibration_method": crime_metrics["calibration"]["method"],
             "cv_folds": CV_FOLDS,
+            "model_input": "imputed",
+            "crime_model_type": "logistic_regression",
+            "gang_model_type": "logistic_regression",
+            "derived_features": DERIVED_FEATURE_COLUMNS.copy(),
+            "feature_importance_method": "permutation_importance_on_holdout",
             "feature_columns": FEATURE_COLUMNS.copy(),
             "model_feature_columns": {
                 "crime_classifier": FEATURE_COLUMNS.copy(),
@@ -850,14 +908,14 @@ class CRMSMLPipeline:
 
     @staticmethod
     def _cross_validation(
-        X: np.ndarray, y: np.ndarray, classes: Sequence[str], estimator: RandomForestClassifier,
+        X: np.ndarray, y: np.ndarray, classes: Sequence[str], estimator: Any,
         order: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         """Robustness diagnostic. With ``order`` (chronological row order) folds
-        always train on earlier cases and test on later ones."""
+        always train on earlier cases and test on later ones. The estimators
+        scale their own inputs, so only imputation is added here."""
         pipeline = SklearnPipeline([
             ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
             ("model", estimator),
         ])
         if order is not None:
@@ -898,13 +956,21 @@ class CRMSMLPipeline:
         self._validate_risk_inputs(criminal_data)
         features = self._extract_features(criminal_data, impute_missing=self._imputes_missing())
         feature_quality = self._feature_input_quality(criminal_data)
-        X_scaled = self._transform_features(np.array([features], dtype=float))
+        X_raw = np.array([features], dtype=float)
+        imputed_input = self._models_take_imputed_input()
+        X_crime = self.imputer.transform(X_raw) if imputed_input else self._transform_features(X_raw)
 
         crime_model = self.crime_calibrator if self.crime_calibrator is not None else self.crime_classifier
-        crime_proba = crime_model.predict_proba(X_scaled)[0]
+        crime_proba = crime_model.predict_proba(X_crime)[0]
         crime_idx = int(np.argmax(crime_proba))
         predicted_crime = self.label_encoder_crime.inverse_transform([crime_idx])[0]
         crime_confidence = float(crime_proba[crime_idx])
+        ranked = np.argsort(-crime_proba, kind="stable")[:TOP_K_SUGGESTIONS]
+        crime_candidates = [
+            {"crime_type": str(self.label_encoder_crime.inverse_transform([int(i)])[0]),
+             "score": round(float(crime_proba[i]) * 100, 1)}
+            for i in ranked
+        ]
 
         # Older bundled artifacts were trained with is_gang_member included,
         # leaking the gang target. Fail closed for those legacy artifacts instead
@@ -919,8 +985,9 @@ class CRMSMLPipeline:
         else:
             gang_features = np.asarray([features], dtype=float)[:, GANG_FEATURE_INDICES]
             gang_input = self.gang_imputer.transform(gang_features)
-            gang_scaled = self.gang_scaler.transform(gang_input)
-            gang_proba = self.gang_predictor.predict_proba(gang_scaled)[0]
+            if not imputed_input:
+                gang_input = self.gang_scaler.transform(gang_input)
+            gang_proba = self.gang_predictor.predict_proba(gang_input)[0]
             gang_idx = int(np.argmax(gang_proba))
             predicted_gang_label = self.label_encoder_gang.inverse_transform([gang_idx])[0]
             gang_confidence = float(gang_proba[gang_idx])
@@ -953,6 +1020,7 @@ class CRMSMLPipeline:
         return {
             "predicted_crime_type": predicted_crime,
             "crime_type_confidence": round(crime_confidence * 100, 1),
+            "crime_type_candidates": crime_candidates,
             "gang_affiliation_probability": round(gang_affiliation_prob * 100, 1),
             "predicted_gang": predicted_gang_label if gang_prediction_available and predicted_gang_label != "None" else None,
             "gang_prediction_available": gang_prediction_available,
@@ -963,6 +1031,7 @@ class CRMSMLPipeline:
             "input_features": {
                 "prior_convictions": criminal_data.get("prior_convictions", 0),
                 "crime_type": criminal_data.get("crime_type", "Unknown"),
+                "crime_type_candidates": crime_candidates,
                 "gang_affiliated": criminal_data.get("gang_id") is not None,
                 "is_wanted": criminal_data.get("is_wanted", False),
                 "violence_history": criminal_data.get("violence_history", 0),
@@ -981,6 +1050,10 @@ class CRMSMLPipeline:
                 "explanation": explanation,
             },
         }
+
+    def _models_take_imputed_input(self) -> bool:
+        """Pipeline 3.0+ models scale their own inputs; older ones expect scaled input."""
+        return self.imputer is not None and self.training_metadata.get("model_input") == "imputed"
 
     def _calibration_warning(self) -> str:
         ece = ((self.training_metadata.get("crime_classifier") or {}).get("calibration") or {}).get(
@@ -1001,11 +1074,17 @@ class CRMSMLPipeline:
     ) -> Dict[str, Any]:
         """Expose model-derived feature importance without claiming causality.
 
-        Random Forest ``feature_importances_`` is a global model statistic, not a
+        Global importance (permutation importance on the holdout, or a legacy
+        Random Forest's ``feature_importances_``) is a model statistic, not a
         per-record causal explanation. The API therefore labels it explicitly as
         model feature importance and pairs it with the actual evaluated value.
         """
-        importances = np.asarray(self.crime_classifier.feature_importances_, dtype=float)
+        stored = self.training_metadata.get("feature_importances") or {}
+        legacy_forest = hasattr(self.crime_classifier, "feature_importances_")
+        if legacy_forest:
+            importances = np.asarray(self.crime_classifier.feature_importances_, dtype=float)
+        else:
+            importances = np.asarray([float(stored.get(name, 0.0)) for name in FEATURE_COLUMNS], dtype=float)
         total = float(importances.sum()) or 1.0
         relative = importances / total
         # Unrecorded inputs are NaN here; report the training median the model
@@ -1025,8 +1104,8 @@ class CRMSMLPipeline:
         rows.sort(key=lambda item: (-item["relative_importance"], item["feature"]))
         top = rows[:5]
         return {
-            "type": "random_forest_feature_importance",
-            "method": "global_random_forest_feature_importance",
+            "type": "random_forest_feature_importance" if legacy_forest else "permutation_importance",
+            "method": "global_random_forest_feature_importance" if legacy_forest else "global_permutation_importance",
             "model_version": self.model_version,
             "predicted_crime": predicted_crime,
             "crime_confidence": round(crime_confidence * 100, 1),
@@ -1493,8 +1572,8 @@ class CRMSMLPipeline:
             except json.JSONDecodeError:
                 metadata = {}
         if self._is_stale_demo_model(metadata):
-            logger.warning("Active demo model was trained on a different synthetic dataset; retraining on %s.",
-                           DATASET_PATH.name)
+            logger.warning("Active demo model was trained on a different synthetic dataset or pipeline version; "
+                           "retraining on %s.", DATASET_PATH.name)
             self.train()
             self.integrity = {"status": "verified", "verified": True}
             return
@@ -1531,7 +1610,7 @@ class CRMSMLPipeline:
 
     @staticmethod
     def _is_stale_demo_model(metadata: Dict[str, Any]) -> bool:
-        """True only for a synthetic demo model whose dataset was since replaced.
+        """True only for a synthetic demo model whose dataset or pipeline version was since replaced.
 
         Real-data models are never replaced automatically: they change only
         through the reviewed candidate/activation workflow.
@@ -1545,6 +1624,8 @@ class CRMSMLPipeline:
             return False
         if current.get("dataset_type") != "synthetic_demonstration":
             return False
+        if metadata.get("pipeline_version") != PIPELINE_VERSION:
+            return True  # demo model from an older pipeline: retrain with the current models
         return bool(dataset.get("sha256")) and dataset.get("sha256") != _dataset_sha256(DATASET_PATH)
 
     def get_metadata(self) -> Dict[str, Any]:

@@ -27,19 +27,23 @@ from sklearn.impute import SimpleImputer
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
 from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import LabelEncoder
 
 from app.config import settings
 from app.ml.pipeline import (
-    CALIBRATION_CV, CV_FOLDS, RANDOM_SEED, crime_estimator, expected_calibration_error,
-    holdout_split, load_training_dataset,
+    CALIBRATION_CV, CV_FOLDS, RANDOM_SEED, TOP_K_SUGGESTIONS, crime_estimator, expected_calibration_error,
+    holdout_split, load_training_dataset, random_forest_estimator,
 )
+
+RELEASE_MODEL = "logistic_regression"
 
 CANDIDATES: dict[str, Callable[[], Any]] = {
     "majority_baseline": lambda: DummyClassifier(strategy="most_frequent"),
-    "random_forest": crime_estimator,
-    "random_forest+sigmoid": lambda: CalibratedClassifierCV(crime_estimator(), method="sigmoid", cv=CALIBRATION_CV),
-    "random_forest+isotonic": lambda: CalibratedClassifierCV(crime_estimator(), method="isotonic", cv=CALIBRATION_CV),
+    # The release model (pipeline.crime_estimator) and its calibrated variants.
+    RELEASE_MODEL: crime_estimator,
+    f"{RELEASE_MODEL}+sigmoid": lambda: CalibratedClassifierCV(crime_estimator(), method="sigmoid", cv=CALIBRATION_CV),
+    f"{RELEASE_MODEL}+isotonic": lambda: CalibratedClassifierCV(crime_estimator(), method="isotonic", cv=CALIBRATION_CV),
+    "random_forest": random_forest_estimator,
     # Gradient boosting comparable to LightGBM without an extra dependency.
     "hist_gradient_boosting": lambda: HistGradientBoostingClassifier(
         learning_rate=0.05, max_iter=200, class_weight="balanced", random_state=RANDOM_SEED),
@@ -54,11 +58,12 @@ def _full_proba(model: Any, X: np.ndarray, n_classes: int) -> np.ndarray:
 
 
 def _score_candidate(factory: Callable[[], Any], X: np.ndarray, y: np.ndarray, folds: list, n_classes: int) -> dict[str, Any]:
-    scores: dict[str, list[float]] = {"macro_f1": [], "balanced_accuracy": [], "accuracy": [], "ece": []}
+    scores: dict[str, list[float]] = {"macro_f1": [], "balanced_accuracy": [], "accuracy": [],
+                                      f"top_{TOP_K_SUGGESTIONS}_accuracy": [], "ece": []}
     errors = []
     for train_idx, test_idx in folds:
-        model = Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler()),
-                          ("model", factory())])
+        # Candidates that need scaling scale their own (derived) inputs.
+        model = Pipeline([("imputer", SimpleImputer(strategy="median")), ("model", factory())])
         try:
             model.fit(X[train_idx], y[train_idx])
         except ValueError as exc:  # e.g. a class too small for calibration folds
@@ -69,6 +74,8 @@ def _score_candidate(factory: Callable[[], Any], X: np.ndarray, y: np.ndarray, f
         scores["macro_f1"].append(f1_score(y[test_idx], pred, labels=np.arange(n_classes), average="macro", zero_division=0))
         scores["balanced_accuracy"].append(balanced_accuracy_score(y[test_idx], pred))
         scores["accuracy"].append(accuracy_score(y[test_idx], pred))
+        top_k = np.argsort(-proba, axis=1)[:, :TOP_K_SUGGESTIONS]
+        scores[f"top_{TOP_K_SUGGESTIONS}_accuracy"].append(float(np.mean([y[i] in row for i, row in zip(test_idx, top_k)])))
         scores["ece"].append(expected_calibration_error(y[test_idx], proba)["expected_calibration_error"])
     if not scores["macro_f1"]:
         return {"error": errors[0] if errors else "no folds could be evaluated"}
@@ -102,11 +109,11 @@ def build_report() -> dict[str, Any]:
     baseline_bal_acc = results["majority_baseline"].get("balanced_accuracy_mean", 0.0)
     best = max(scored, key=lambda name: scored[name]["macro_f1_mean"]) if scored else None
     # Calibration should fix confidence without costing accuracy: only consider
-    # forest variants whose macro-F1 is within one fold-std of the plain forest.
-    plain = scored.get("random_forest")
-    rf_variants = {name: r for name, r in scored.items() if name.startswith("random_forest") and plain
-                   and r["macro_f1_mean"] >= plain["macro_f1_mean"] - plain["macro_f1_std"]}
-    best_calibrated_rf = min(rf_variants, key=lambda name: rf_variants[name]["ece_mean"]) if rf_variants else None
+    # release-model variants whose macro-F1 is within one fold-std of the plain one.
+    plain = scored.get(RELEASE_MODEL)
+    variants = {name: r for name, r in scored.items() if name.startswith(RELEASE_MODEL) and plain
+                and r["macro_f1_mean"] >= plain["macro_f1_mean"] - plain["macro_f1_std"]}
+    best_calibrated = min(variants, key=lambda name: variants[name]["ece_mean"]) if variants else None
     gate = settings.model_quality_gate.as_dict()
     best_result = scored.get(best, {}) if best else {}
     return {
@@ -126,13 +133,13 @@ def build_report() -> dict[str, Any]:
                 and best_result["balanced_accuracy_mean"] >= gate["min_balanced_accuracy"]),
             "gate_thresholds": {"min_macro_f1": gate["min_macro_f1"], "min_balanced_accuracy": gate["min_balanced_accuracy"],
                                 "max_expected_calibration_error": gate["max_expected_calibration_error"]},
-            "lowest_ece_random_forest_variant": best_calibrated_rf,
+            "lowest_ece_release_model_variant": best_calibrated,
             "suggested_AI_CRMS_CALIBRATION": (
-                best_calibrated_rf.split("+", 1)[1] if best_calibrated_rf and "+" in best_calibrated_rf else "none"),
+                best_calibrated.split("+", 1)[1] if best_calibrated and "+" in best_calibrated else "none"),
         },
         "notes": [
-            "The release pipeline trains a Random Forest; if hist_gradient_boosting is clearly better on real data, "
-            "switching the estimator in pipeline.crime_estimator() is the follow-up change.",
+            f"The release pipeline trains {RELEASE_MODEL} (pipeline.crime_estimator()); if another candidate is "
+            "clearly better on real data, switching that estimator is the follow-up change.",
             "Differences smaller than the fold standard deviation are not meaningful.",
             "Majority-baseline ECE is high by construction (it is always 100% confident).",
         ],
@@ -143,13 +150,15 @@ def _print_table(report: dict[str, Any]) -> None:
     print(f"Dataset: {report['dataset']['dataset_type']} v{report['dataset']['dataset_version']} "
           f"({report['development_rows']} development rows, {report['holdout']['rows_excluded']} locked holdout rows "
           f"excluded, {report['cv_scheme']} CV)\n")
-    print(f"{'model':<26}{'macro-F1':>18}{'bal. acc':>18}{'ECE':>18}")
+    top_k = f"top_{TOP_K_SUGGESTIONS}_accuracy"
+    print(f"{'model':<30}{'accuracy':>18}{f'top-{TOP_K_SUGGESTIONS} acc':>18}{'macro-F1':>18}{'bal. acc':>18}{'ECE':>18}")
     for name, r in report["results"].items():
         if "error" in r:
-            print(f"{name:<26}  error: {r['error']}")
+            print(f"{name:<30}  error: {r['error']}")
             continue
-        cells = [f"{r[f'{m}_mean']:.3f} +/- {r[f'{m}_std']:.3f}" for m in ("macro_f1", "balanced_accuracy", "ece")]
-        print(f"{name:<26}" + "".join(f"{c:>18}" for c in cells))
+        cells = [f"{r[f'{m}_mean']:.3f} +/- {r[f'{m}_std']:.3f}"
+                 for m in ("accuracy", top_k, "macro_f1", "balanced_accuracy", "ece")]
+        print(f"{name:<30}" + "".join(f"{c:>18}" for c in cells))
     summary = report["summary"]
     gate = summary["gate_thresholds"]
     print(f"\nBest by macro-F1: {summary['best_by_macro_f1']} "

@@ -2,7 +2,7 @@
 
 This runbook takes the AI from the bundled synthetic demo data to a model that can pass the release gate. Every step runs from `backend/`. Read [MODEL_CARD.md](MODEL_CARD.md) and [FEATURE_CONTRACT.md](../backend/app/ml/FEATURE_CONTRACT.md) first.
 
-> The bundled India demo dataset is **synthetic**: its patterns were designed in, so the models score well on it (about 50% crime accuracy against an 11% baseline, danger-score AUC 0.77), but that says nothing about real cases. Models trained on it can never be activated for real use. Real performance depends entirely on real data.
+> The bundled India demo dataset is **synthetic**: its patterns were designed in, so the models score well on it (about 54% crime accuracy and 86% top-3 accuracy against an 11% baseline, which is within a point of the best any model can do on it; danger-score AUC 0.77), but that says nothing about real cases. Models trained on it can never be activated for real use. Real performance depends entirely on real data.
 
 ## 1. Define the task
 
@@ -67,13 +67,13 @@ AI_CRMS_DATASET_PATH=/secure/data/cases_v1.csv
 python -m app.ml.compare_models --output reports/compare_v1.json
 ```
 
-This compares the majority baseline, Random Forest (raw, sigmoid- and isotonic-calibrated) and gradient boosting, using only the **development** portion. The locked holdout (newest 20% of cases when dated) is excluded and judged once, by the gate, in step 6.
+This compares the majority baseline, the release logistic regression (raw, sigmoid- and isotonic-calibrated), Random Forest and gradient boosting, reporting accuracy, top-3 accuracy, macro-F1, balanced accuracy and calibration error, using only the **development** portion. The locked holdout (newest 20% of cases when dated) is excluded and judged once, by the gate, in step 6.
 
 Read the output:
 
 - If the best model does not clearly beat the baseline, or is far below the gate thresholds, **stop**. More or better features or data are needed; tuning won't fix that.
 - Set `AI_CRMS_CALIBRATION` to the suggested value (the lowest calibration error that doesn't cost macro-F1).
-- If gradient boosting wins by more than the fold standard deviation, switching `crime_estimator()` in `pipeline.py` is the follow-up change.
+- If another candidate wins by more than the fold standard deviation, switching `crime_estimator()` in `pipeline.py` is the follow-up change.
 
 ## 5. Check fairness and reliability
 
