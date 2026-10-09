@@ -1,8 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Inbox, RefreshCw, X } from 'lucide-react';
 import { pageCount } from '../utils/format';
-
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { useDialog } from '../utils/useDialog';
 
 /**
  * Accessible modal dialog: labelled, traps focus, closes on Escape and
@@ -11,41 +10,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
 export function Modal({ title, onClose, children, footer, maxWidth = 540, busy = false }) {
   const titleId = useId();
   const cardRef = useRef(null);
-  // Refs keep the mount-only effect below stable even though callers pass
-  // inline callbacks (re-running it would steal focus on every keystroke).
-  const onCloseRef = useRef(onClose);
-  const busyRef = useRef(busy);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-    busyRef.current = busy;
-  });
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement;
-    const card = cardRef.current;
-    const first = card?.querySelector('input, select, textarea') || card?.querySelector(FOCUSABLE);
-    first?.focus();
-
-    const onKey = (event) => {
-      if (event.key === 'Escape' && !busyRef.current) {
-        event.stopPropagation();
-        onCloseRef.current();
-      }
-      if (event.key === 'Tab' && card) {
-        const items = [...card.querySelectorAll(FOCUSABLE)];
-        if (!items.length) return;
-        const firstItem = items[0];
-        const lastItem = items[items.length - 1];
-        if (event.shiftKey && document.activeElement === firstItem) { event.preventDefault(); lastItem.focus(); }
-        else if (!event.shiftKey && document.activeElement === lastItem) { event.preventDefault(); firstItem.focus(); }
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      previouslyFocused?.focus?.();
-    };
-  }, []);
+  useDialog(cardRef, { onClose, busy });
 
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
