@@ -41,6 +41,8 @@ export async function signIn(page, username) {
 }
 
 export async function signOut(page) {
+  // The sidebar is a collapsed icon rail; its account actions appear once it is hovered open.
+  await page.getByRole('navigation', { name: 'Main navigation' }).hover();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
 }
