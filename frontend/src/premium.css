@@ -258,3 +258,33 @@ tbody tr:hover { background: #FBF8F1; }
   .stat-value { font-size: 2.2rem; }
   .page-title { font-size: 1.8rem; }
 }
+
+/* ── Layout: centred, wider content; the open menu pushes the page aside ──── */
+/* Content is centred in the space right of the menu and grows to 1680px.
+   On wide screens, opening the menu shifts the page instead of covering it. */
+.app-layout { --content-offset: var(--rail-width); --content-max: 1680px; }
+.main-content {
+  max-width: none; margin-left: var(--content-offset);
+  padding-left: max(48px, calc((100vw - var(--content-offset) - var(--content-max)) / 2));
+  padding-right: max(48px, calc((100vw - var(--content-offset) - var(--content-max)) / 2));
+  transition: margin-left 200ms cubic-bezier(0.2, 0, 0, 1), padding 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.header {
+  left: var(--content-offset);
+  padding-left: max(48px, calc((100vw - var(--content-offset) - var(--content-max)) / 2));
+  padding-right: max(48px, calc((100vw - var(--content-offset) - var(--content-max)) / 2));
+  transition: left 200ms cubic-bezier(0.2, 0, 0, 1), padding 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+@media (min-width: 1100px) {
+  .sidebar:hover ~ *, .sidebar.is-open ~ *, .sidebar:has(:focus-visible) ~ * { --content-offset: var(--sidebar-width); }
+  .sidebar:hover, .sidebar.is-open, .sidebar:has(:focus-visible) { box-shadow: 0 0 40px -12px rgba(7, 11, 23, 0.45); }
+}
+@media (max-width: 900px) {
+  .main-content { padding-left: 28px; padding-right: 28px; }
+  .header { padding-left: 24px; padding-right: 24px; }
+}
+@media (max-width: 640px) {
+  .main-content { padding-left: 16px; padding-right: 16px; }
+  .header { padding-left: 12px; padding-right: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .main-content, .header { transition: none; } }
