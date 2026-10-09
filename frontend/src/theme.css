@@ -443,3 +443,79 @@ tbody tr:hover { background: #FAFAFC; }
 .profile-photo-wrap { display: grid; gap: 6px; justify-items: center; flex: none; }
 .profile-photo-actions { display: flex; gap: 4px; }
 .profile-photo-actions .btn { padding: 3px 8px; font-size: 0.75rem; }
+
+/* ── Brand emblem ─────────────────────────────────────────────────────────── */
+.brand-mark { display: block; flex-shrink: 0; border-radius: 50%; }
+.sidebar-brand .brand-mark { width: 32px; height: 32px; }
+.signin-bar .brand-mark { width: 24px; height: 24px; }
+.signin-emblem { width: 112px; height: 112px; margin: 0 auto 20px; filter: drop-shadow(0 10px 22px rgba(14, 21, 36, 0.22)); }
+.auth-emblem { width: 56px; height: 56px; margin-bottom: 12px; }
+
+/* ── Page transition curtain ──────────────────────────────────────────────── */
+.route-curtain {
+  position: fixed; inset: 0; z-index: 10000;
+  display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 42%, #22355A 0%, #111B33 46%, #070B17 100%);
+  transform: translateY(100%); visibility: hidden; pointer-events: none;
+}
+.route-curtain::before, .route-curtain::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, #A8751B 18%, #FFF3C4 50%, #A8751B 82%, transparent);
+}
+.route-curtain::before { top: 0; }
+.route-curtain::after { bottom: 0; }
+.route-curtain[data-phase='intro'], .route-curtain[data-phase='cover'], .route-curtain[data-phase='hold'] {
+  transform: translateY(0); visibility: visible; pointer-events: auto;
+  transition: transform 520ms cubic-bezier(0.77, 0, 0.18, 1);
+}
+.route-curtain[data-phase='reveal'] {
+  transform: translateY(-100%); visibility: visible;
+  transition: transform 650ms cubic-bezier(0.77, 0, 0.18, 1) 60ms;
+}
+.route-curtain-inner { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.route-curtain-emblem {
+  position: relative; width: min(220px, 48vw); aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+  opacity: 0; transform: scale(0.84);
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.5));
+}
+.route-curtain-emblem img { display: block; width: 100%; height: 100%; }
+.route-curtain-emblem::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 243, 196, 0.55) 50%, transparent 62%);
+  background-size: 260% 100%; background-position: 130% 0; mix-blend-mode: overlay;
+}
+.route-curtain-caption {
+  font-family: 'Cinzel', 'Trajan Pro', Georgia, 'Times New Roman', serif;
+  font-size: 0.72rem; letter-spacing: 0.34em; text-transform: uppercase; color: #D9B45A;
+  opacity: 0; transform: translateY(8px);
+}
+.route-curtain-rule {
+  width: 140px; height: 1px; transform: scaleX(0);
+  background: linear-gradient(90deg, transparent, #E2C277, transparent);
+}
+.route-curtain[data-phase='intro'] .route-curtain-emblem,
+.route-curtain[data-phase='cover'] .route-curtain-emblem,
+.route-curtain[data-phase='hold'] .route-curtain-emblem {
+  opacity: 1; transform: scale(1);
+  transition: opacity 420ms ease 200ms, transform 900ms cubic-bezier(0.2, 0.8, 0.2, 1) 200ms;
+}
+.route-curtain[data-phase='intro'] .route-curtain-emblem::after,
+.route-curtain[data-phase='cover'] .route-curtain-emblem::after,
+.route-curtain[data-phase='hold'] .route-curtain-emblem::after {
+  animation: crms-shimmer 1100ms ease 380ms both;
+}
+.route-curtain[data-phase='intro'] .route-curtain-caption,
+.route-curtain[data-phase='cover'] .route-curtain-caption,
+.route-curtain[data-phase='hold'] .route-curtain-caption {
+  opacity: 1; transform: none; transition: opacity 500ms ease 420ms, transform 500ms ease 420ms;
+}
+.route-curtain[data-phase='intro'] .route-curtain-rule,
+.route-curtain[data-phase='cover'] .route-curtain-rule,
+.route-curtain[data-phase='hold'] .route-curtain-rule {
+  transform: scaleX(1); transition: transform 800ms cubic-bezier(0.2, 0.8, 0.2, 1) 300ms;
+}
+.route-curtain[data-phase='reveal'] .route-curtain-emblem { opacity: 0; transform: scale(1.04) translateY(-24px); transition: opacity 320ms ease, transform 420ms ease; }
+.route-curtain[data-phase='reveal'] .route-curtain-caption,
+.route-curtain[data-phase='reveal'] .route-curtain-rule { opacity: 0; transition: opacity 240ms ease; }
+@keyframes crms-shimmer { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) { .route-curtain { display: none; } }
