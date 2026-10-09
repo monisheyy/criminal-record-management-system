@@ -54,7 +54,7 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 RANDOM_SEED = 42
 TEST_SIZE = 0.20
 DATASET_VERSION = "1.0"
-PIPELINE_VERSION = "3.0"
+PIPELINE_VERSION = "4.0"
 CV_FOLDS = 5
 # Optional probability calibration of the crime classifier: none | sigmoid | isotonic.
 # Choose it with evidence from `python -m app.ml.compare_models`, not by default.
@@ -86,11 +86,21 @@ CRIME_SEVERITY = {
     "Cybercrime": 0.35, "Vandalism": 0.2,
 }
 
-FEATURE_COLUMNS = [
+from app.constants import CASE_DETAIL_FIELDS, CRIME_CATEGORIES, CRIME_TYPES, GANG_NAMES  # noqa: E402  (single source of truth)
+
+BASE_FEATURE_COLUMNS = [
     "prior_convictions", "age", "is_gang_member", "weapons_involved",
     "drug_involvement", "financial_motivation", "tech_involvement",
     "violence_history", "location_risk", "time_of_crime", "associates_count",
 ]
+# Case incident details (place, target, modus operandi) as one-hot 0/1 columns,
+# e.g. location_residence. A detail that was not recorded is blank in every
+# column of its group (imputed like any missing input), never a guessed category.
+CASE_DETAIL_COLUMNS = {
+    field: [f"{prefix}_{key}" for key in vocabulary]
+    for field, (vocabulary, prefix) in CASE_DETAIL_FIELDS.items()
+}
+FEATURE_COLUMNS = BASE_FEATURE_COLUMNS + [name for names in CASE_DETAIL_COLUMNS.values() for name in names]
 # Gang affiliation is the target for the gang model. `is_gang_member` is a direct
 # proxy for that target and must not be included as a predictor for that model.
 GANG_FEATURE_COLUMNS = [name for name in FEATURE_COLUMNS if name != "is_gang_member"]
@@ -121,7 +131,6 @@ CASE_INCIDENT_FEATURES = ("weapons_involved", "drug_involvement", "financial_mot
 # Dataset types whose models may be trained and evaluated but never activated.
 UNVALIDATED_DATASET_TYPES = frozenset({"synthetic_demonstration", "unknown", "external"})
 
-from app.constants import CRIME_CATEGORIES, CRIME_TYPES, GANG_NAMES  # noqa: E402  (single source of truth)
 EXPECTED_CRIMES = set(CRIME_TYPES)
 EXPECTED_GANGS = set(GANG_NAMES) | {"None"}
 
@@ -131,6 +140,7 @@ NUMERIC_RANGES = {
     "financial_motivation": (0, 1), "tech_involvement": (0, 1),
     "violence_history": (0, 100), "location_risk": (0, 1),
     "time_of_crime": (0, 23), "associates_count": (0, 1000),
+    **{name: (0, 1) for names in CASE_DETAIL_COLUMNS.values() for name in names},
 }
 
 
@@ -366,15 +376,20 @@ def load_training_dataset(
 
     with path.open("r", newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        expected_columns = FEATURE_COLUMNS + TARGET_COLUMNS
         fieldnames = list(reader.fieldnames or [])
+        # Datasets made before case details existed (base features only) still
+        # load; their case-detail inputs are all missing.
+        expected_columns = FEATURE_COLUMNS + TARGET_COLUMNS
+        if fieldnames[:len(BASE_FEATURE_COLUMNS) + len(TARGET_COLUMNS)] == BASE_FEATURE_COLUMNS + TARGET_COLUMNS:
+            expected_columns = BASE_FEATURE_COLUMNS + TARGET_COLUMNS
         extra_columns = fieldnames[len(expected_columns):]
         bad_extra = [name for name in extra_columns if name not in (DATE_COLUMN, OUTCOME_COLUMN) and not (
             name.startswith(SLICE_PREFIX) and len(name) > len(SLICE_PREFIX))]
         if (fieldnames[:len(expected_columns)] != expected_columns or bad_extra
                 or len(set(fieldnames)) != len(fieldnames)):
             raise DatasetValidationError(
-                f"Dataset columns do not match schema. Expected {expected_columns} optionally followed by "
+                f"Dataset columns do not match schema. Expected {FEATURE_COLUMNS + TARGET_COLUMNS} (or without the "
+                f"case-detail columns) optionally followed by "
                 f"'{DATE_COLUMN}', '{OUTCOME_COLUMN}' and '{SLICE_PREFIX}*' columns, got {reader.fieldnames}"
             )
         has_dates = DATE_COLUMN in extra_columns
@@ -387,14 +402,14 @@ def load_training_dataset(
         gang_labels: List[str] = []
         incident_dates: List[float] = []
         slice_values: Dict[str, List[str]] = {name[len(SLICE_PREFIX):]: [] for name in slice_columns}
-        missing_counts = {column: 0 for column in expected_columns}
+        missing_counts = {column: 0 for column in FEATURE_COLUMNS + TARGET_COLUMNS}
 
         for row_number, row in enumerate(reader, start=2):
             if all((row.get(column) or "").strip() == "" for column in expected_columns):
                 continue
             features = []
             for column in FEATURE_COLUMNS:
-                raw = (row.get(column) or "").strip()
+                raw = (row.get(column) or "").strip()  # absent column (older schema) = missing
                 if raw == "":
                     missing_counts[column] += 1
                     features.append(np.nan)
@@ -1122,6 +1137,9 @@ class CRMSMLPipeline:
         "financial_motivation": "Financial motive", "tech_involvement": "Technology used",
         "violence_history": "Violence history", "location_risk": "Location risk",
         "time_of_crime": "Hour of incident", "associates_count": "Known associates",
+        **{f"{prefix}_{key}": f"{group}: {label}"
+           for (vocabulary, prefix), group in zip(CASE_DETAIL_FIELDS.values(), ("Place", "Target", "Method"))
+           for key, label in vocabulary.items()},
     }
 
     def _risk_score_method(self) -> Dict[str, Any]:
@@ -1206,6 +1224,9 @@ class CRMSMLPipeline:
         # Only mark time as derived when a caller provides an actual incident timestamp.
         if data.get("incident_date") and "time_of_crime" not in observed:
             derived.add("time_of_crime")
+        for field, columns in CASE_DETAIL_COLUMNS.items():
+            if data.get(field) not in (None, ""):
+                observed.update(columns)
         covered = observed | derived
         missing = [name for name in FEATURE_COLUMNS if name not in covered]
         return {
@@ -1301,7 +1322,23 @@ class CRMSMLPipeline:
             numeric("location_risk", fallback(0.3), 0.0, 1.0),
             numeric("time_of_crime", hour_default, 0.0, 23.0),
             numeric("associates_count", associates_default, 0.0, 1000.0),
+            *CRMSMLPipeline._case_detail_features(data, fallback(0.0)),
         ]
+
+    @staticmethod
+    def _case_detail_features(data: Dict, missing: float) -> List[float]:
+        """One-hot encode recorded case details; an unrecorded detail is ``missing`` in its whole group."""
+        values: List[float] = []
+        for field, (vocabulary, _prefix) in CASE_DETAIL_FIELDS.items():
+            raw = data.get(field)
+            if raw in (None, ""):
+                values.extend([missing] * len(vocabulary))
+                continue
+            key = str(raw).strip().lower()
+            if key not in vocabulary:
+                raise ValueError(f"{field} must be one of: {', '.join(vocabulary)}")
+            values.extend(1.0 if option == key else 0.0 for option in vocabulary)
+        return values
 
     @staticmethod
     def _incident_hour(data: Dict, default: int = 12) -> int:

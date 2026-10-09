@@ -26,6 +26,8 @@ from reportlab.platypus import (
 )
 from xml.sax.saxutils import escape
 
+from app.constants import LOCATION_TYPES, MODUS_OPERANDI, TARGET_TYPES
+
 INK = colors.HexColor("#0E1524")
 KHAKI = colors.HexColor("#A8751B")
 RULE = colors.HexColor("#C9CED8")
@@ -253,6 +255,9 @@ def generate_case_report(case: dict) -> bytes:
         ("Weapon involved", _v(case.get("weapons_involved"))),
         ("Drugs involved", _v(case.get("drug_involvement"))),
         ("Financial motive", _v(case.get("financial_motivation"))),
+        ("Type of place", _v(LOCATION_TYPES.get(case.get("location_type") or ""))),
+        ("Target", _v(TARGET_TYPES.get(case.get("target_type") or ""))),
+        ("Modus operandi", _v(MODUS_OPERANDI.get(case.get("modus_operandi") or ""))),
     ]))
 
     section("Complainant / informant")

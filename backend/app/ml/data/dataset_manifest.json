@@ -1,6 +1,6 @@
 {
   "dataset_name": "AI-CRMS India Demonstration Crime Training Dataset",
-  "dataset_version": "india-1.0",
+  "dataset_version": "india-2.0",
   "dataset_type": "synthetic_demonstration",
   "generated_with_seed": 42,
   "rows": 6000,
@@ -15,7 +15,28 @@
     "violence_history",
     "location_risk",
     "time_of_crime",
-    "associates_count"
+    "associates_count",
+    "location_residence",
+    "location_business",
+    "location_public_place",
+    "location_transport",
+    "location_financial",
+    "location_online",
+    "target_person",
+    "target_property",
+    "target_vehicle",
+    "target_money",
+    "target_data",
+    "target_contraband",
+    "method_forced_entry",
+    "method_armed_threat",
+    "method_physical_violence",
+    "method_deception",
+    "method_cyber_intrusion",
+    "method_smuggling",
+    "method_abduction",
+    "method_fire_damage",
+    "method_intimidation"
   ],
   "target_columns": [
     "crime_type",
@@ -26,8 +47,8 @@
     "slice_state",
     "reoffended_2y"
   ],
-  "sha256": "63d1175ee05ad7731bc290125595337e80bf5cea0c07f36756da97a04ffcba4c",
+  "sha256": "765bdb9b476298c84deae5e012247cd30760a184f402fe32604c23556474fd34",
   "source": "Deterministic synthetic generator (app/ml/data/generate_india_dataset.py). Crime mix follows the broad ordering of NCRB 'Crime in India' offence volumes (indicative shares, rare classes floored); gangs are fictional. No real person, case or gang.",
-  "label_definition": "Simulated: crime_type and gang_label from fictional gang/crime profiles; reoffended_2y simulated from prior convictions, age, membership and violence.",
-  "schema_version": "1.2"
+  "label_definition": "Simulated: crime_type and gang_label from fictional gang/crime profiles (case details from per-crime place/target/method mixes with 10% noise); reoffended_2y simulated from prior convictions, age, membership and violence.",
+  "schema_version": "2.0"
 }
