@@ -5,6 +5,7 @@ import {
   Lock, LogOut, MapPinned, Shield, Siren, Users,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import monogram from '../assets/brand/crms-monogram.svg';
 import { notificationsAPI } from '../services/api';
 import { formatDate } from '../utils/format';
 import { ROLE_LABELS } from '../utils/constants';
@@ -174,7 +175,7 @@ export default function Layout({ children }) {
 
       <nav className="sidebar" aria-label="Main navigation">
         <div className="sidebar-brand">
-          <div className="sidebar-brand-icon" aria-hidden="true"><Shield size={15} /></div>
+          <img className="brand-mark" src={monogram} alt="" aria-hidden="true" width="32" height="32" />
           <div>
             <div className="sidebar-brand-title">AI-CRMS</div>
             <div className="sidebar-brand-sub">Records Platform</div>

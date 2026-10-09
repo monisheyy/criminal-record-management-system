@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Lock, Shield, User } from 'lucide-react';
+import { Lock, User } from 'lucide-react';
+import monogram from '../assets/brand/crms-monogram.svg';
+import seal from '../assets/brand/crms-seal.svg';
 import { useAuth } from '../contexts/AuthContext';
 import { getErrorMessage } from '../services/api';
 
@@ -46,12 +48,13 @@ export default function Login() {
   return (
     <div className="signin">
       <header className="signin-bar">
-        <span className="sidebar-brand-icon" aria-hidden="true"><Shield size={13} /></span>
+        <img className="brand-mark" src={monogram} alt="" aria-hidden="true" width="24" height="24" />
         AI-CRMS
       </header>
 
       <main className="signin-main">
         <div className="signin-card">
+          <img className="signin-emblem" src={seal} alt="AI-CRMS seal" width="112" height="112" />
           <h1 className="signin-title">Sign in to AI-CRMS</h1>
           <p className="signin-sub">Criminal records, case files and evidence — in one place.</p>
 

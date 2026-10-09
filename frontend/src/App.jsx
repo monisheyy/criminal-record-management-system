@@ -5,6 +5,8 @@ import { AuthProvider } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
+import { RouteCurtain } from './components/RouteTransition';
+import { useRouteTransition } from './utils/useRouteTransition';
 import { LoadingState } from './components/ui';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
@@ -52,23 +54,35 @@ function Page({ element }) {
   );
 }
 
+function AppRoutes() {
+  const location = useLocation();
+  // Routes render the delayed location so each page change plays behind the curtain.
+  const { displayLocation, phase } = useRouteTransition(location);
+  return (
+    <>
+      <Routes location={displayLocation}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        {ROUTES.map(({ path, element, roles }) => (
+          <Route key={path} path={path} element={
+            <ProtectedRoute roles={roles}><Layout><Page element={element} /></Layout></ProtectedRoute>
+          } />
+        ))}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+      <RouteCurtain phase={phase} />
+    </>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Toaster position="top-right" toastOptions={{ ariaProps: { role: 'status', 'aria-live': 'polite' } }} />
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          {ROUTES.map(({ path, element, roles }) => (
-            <Route key={path} path={path} element={
-              <ProtectedRoute roles={roles}><Layout><Page element={element} /></Layout></ProtectedRoute>
-            } />
-          ))}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <AppRoutes />
       </AuthProvider>
     </BrowserRouter>
   );
