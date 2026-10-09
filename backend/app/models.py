@@ -196,6 +196,10 @@ class Case(Base):
     drug_involvement = Column(Boolean, nullable=True)
     financial_motivation = Column(Boolean, nullable=True)
     tech_involvement = Column(Boolean, nullable=True)
+    # Incident details from app.constants.CASE_DETAIL_FIELDS (keys); NULL = not recorded.
+    location_type = Column(String(32), nullable=True)
+    target_type = Column(String(32), nullable=True)
+    modus_operandi = Column(String(32), nullable=True)
 
     # FIR
     fir_number = Column(String(30), nullable=True)

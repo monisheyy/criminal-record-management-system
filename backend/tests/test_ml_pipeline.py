@@ -1,3 +1,4 @@
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -66,7 +67,7 @@ def test_dataset_rejects_unknown_target_class(tmp_path: Path):
     source = DATASET_PATH.read_text(encoding="utf-8")
     lines = source.splitlines()
     cells = lines[1].split(",")
-    cells[12] = "UnknownGang"  # gang_label column
+    cells[len(FEATURE_COLUMNS) + 1] = "UnknownGang"  # gang_label column
     lines[1] = ",".join(cells)
     invalid = tmp_path / "invalid.csv"
     invalid.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -272,7 +273,39 @@ def test_explicit_observed_features_are_used():
         "associates_count": 7,
     })
     assert features[2:7] == [1.0, 1.0, 1.0, 0.0, 1.0]
-    assert features[7:] == [3.0, 0.8, 22.0, 7.0]
+    assert features[7:11] == [3.0, 0.8, 22.0, 7.0]
+
+
+def test_case_details_are_one_hot_inputs_and_unrecorded_details_are_missing():
+    from app.ml.pipeline import CASE_DETAIL_COLUMNS
+
+    columns = {name: i for i, name in enumerate(FEATURE_COLUMNS)}
+    features = CRMSMLPipeline._extract_features(
+        {"location_type": "Online", "target_type": "data"}, impute_missing=True)
+    assert [features[columns[name]] for name in CASE_DETAIL_COLUMNS["location_type"]] == [0, 0, 0, 0, 0, 1]
+    assert features[columns["target_data"]] == 1.0 and features[columns["target_money"]] == 0.0
+    assert all(np.isnan(features[columns[name]]) for name in CASE_DETAIL_COLUMNS["modus_operandi"])
+    quality = CRMSMLPipeline._feature_input_quality({"location_type": "online"})
+    assert set(CASE_DETAIL_COLUMNS["location_type"]) <= set(quality["observed_features"])
+    assert "method_deception" in quality["defaulted_features"]
+    with pytest.raises(ValueError, match="modus_operandi must be one of"):
+        CRMSMLPipeline._extract_features({"modus_operandi": "telepathy"})
+
+
+def test_dataset_without_case_detail_columns_still_loads(tmp_path: Path):
+    from app.ml.pipeline import BASE_FEATURE_COLUMNS, TARGET_COLUMNS
+
+    with DATASET_PATH.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))[:200]
+    older = tmp_path / "older.csv"
+    with older.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=BASE_FEATURE_COLUMNS + TARGET_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    X, _, _, meta = load_training_dataset(older)
+    assert X.shape == (200, len(FEATURE_COLUMNS))
+    assert np.isnan(X[:, FEATURE_COLUMNS.index("method_deception")]).all()
+    assert meta["missing_counts"]["method_deception"] == 200
 
 
 def test_candidate_save_does_not_overwrite_active_artifacts(tmp_path, monkeypatch):

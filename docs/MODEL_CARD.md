@@ -6,8 +6,8 @@
 
 | | |
 |---|---|
-| Models | Logistic-regression crime-category classifier (15 classes); logistic-regression gang-affiliation classifier (6 fictional gangs + none); logistic-regression danger score (P(re-arrest within 2 years)). The crime and gang models add two derived inputs: a night-time flag (20:00–04:59) and log(1 + associates) |
-| Pipeline version | 3.0 (`backend/app/ml/pipeline.py`) |
+| Models | Logistic-regression crime-category classifier (15 classes); logistic-regression gang-affiliation classifier (6 fictional gangs + none); logistic-regression danger score (P(re-arrest within 2 years)). Inputs: 11 person/incident features plus the case's type of place, target and modus operandi (one-hot, 21 columns). The crime and gang models add two derived inputs: a night-time flag (20:00–04:59) and log(1 + associates) |
+| Pipeline version | 4.0 (`backend/app/ml/pipeline.py`) |
 | Training data | `backend/app/ml/data/india_crime_training_v1.csv`, synthetic, SHA-256 pinned in `dataset_manifest.json` |
 | Outputs | Suggested crime category + score, plus the top 3 categories ranked; suggested gang + association score; danger score 1–100 = 1 + 99 × P(re-arrest within 2 years), with an exact per-factor breakdown (falls back to the fixed-weight prototype score when the dataset has no `reoffended_2y` outcome) |
 | Owner | System administrator(s) operating the Model Governance screen |
@@ -32,20 +32,22 @@ Computed at every training run and stored with the candidate (visible in Model G
 
 ### Results on the bundled synthetic data (time-based holdout: newest 1,200 incidents)
 
-| Model | Pipeline 3.0 | Pipeline 2.0 (Random Forest) | Best possible on this data | Baseline |
+| Model | Pipeline 4.0 (dataset india-2.0) | Pipeline 3.0 (india-1.0) | Best possible on india-2.0 | Baseline |
 |---|---|---|---|---|
-| Crime type, accuracy | **54.3%** | 50.2% | 55.1% | 11% (always guess the most common) |
-| Crime type, top-3 accuracy | **85.8%** | not measured | 86.3% | 24% |
-| Crime type, macro-F1 / ECE | 0.50 / 0.02 | 0.46 / 0.07 | | |
-| Gang, accuracy | **81.5%** | 71.2% | 82.1% | 71.8% (always "None") |
-| Gang, balanced accuracy | 52% (per-gang recall 17–69%) | 64% | | 14% (chance across 7 classes) |
-| Danger score | AUC 0.774, ECE 0.01; observed re-arrest 23% / 45% / 68% / 86% in low / medium / high / critical | AUC 0.774 (same model) | AUC 0.78 | 43% base rate |
+| Crime type, accuracy | **83.2%** | 54.3% | 85.4% | 11% (always guess the most common) |
+| Crime type, top-3 accuracy | **98.0%** | 85.8% | 98.1% | 24% |
+| Crime type, macro-F1 / balanced accuracy / ECE | 0.81 / 0.81 / 0.03 | 0.50 / 0.50 / 0.02 | | |
+| Gang, accuracy | **84.3%** | 81.5% | 85.7% | 71.8% (always "None") |
+| Gang, balanced accuracy | 63% (per-gang recall 32–79%) | 52% | | 14% (chance across 7 classes) |
+| Danger score | AUC 0.777, ECE 0.02; observed re-arrest 22% / 46% / 67% / 89% in low / medium / high / critical | AUC 0.774 | AUC 0.78 | 43% base rate |
 
-"Best possible" is the Bayes-optimal score: the generator draws every row at random from overlapping crime and gang profiles, so many rows look identical but carry different labels, and no model can beat that limit on average (`python -m app.ml.data.accuracy_ceiling` computes it from the generator's exact probabilities). Pipeline 3.0 is within 1 point of it on every target, so more tuning cannot raise single-guess crime accuracy toward 80% on this data; only richer real inputs can.
+**Where the gain comes from.** Version india-2.0 of the synthetic data adds three case details an officer records on an FIR: the type of place, the target and the modus operandi. The generator gives each crime type its own mix of them, with overlaps (an assault and a murder are both mostly physical violence against a person) and 10% of entries drawn at random, standing in for recording errors and unusual cases. Every other column is byte-for-byte the same as india-1.0, so the jump from 54% to 83% is entirely the value of recording these details *as the generator models them*. How much they help on real cases can only be measured on real cases.
 
-Trade-off: the 2.0 gang forest weighted gangs equally, which raised balanced accuracy but made it *less* accurate than always answering "None". The 3.0 model is the most accurate, but it answers "None" for borderline cases, so it finds fewer gang members (Lal Toofan 17% and Kaali Billi 24% recall, because both share night-time burglary and vehicle theft with non-gang offenders).
+"Best possible" is the Bayes-optimal score: the generator draws every row at random from overlapping profiles, so some rows look identical but carry different labels, and no model can beat that limit on average (`python -m app.ml.data.accuracy_ceiling` computes it from the generator's exact probabilities). The model is within 2.2 points of it on crime type. The hardest crimes are Murder (53% recall, mostly confused with Assault) and Money Laundering (63%, confused with Fraud).
 
-The model was chosen on development folds only (`compare_models`: logistic regression 52.1% ± 2.0 accuracy and 85.4% top-3 vs Random Forest 48.3% and 81.9%, gradient boosting 45.9% and 79.7%); the holdout above was scored once. The night window matches how the synthetic generator defines night; re-check it on real data.
+Trade-off: the 2.0 gang forest weighted gangs equally, which raised balanced accuracy but made it *less* accurate than always answering "None". The logistic model is the most accurate, but it answers "None" for borderline cases, so it finds fewer members of the gangs whose crimes overlap with non-gang offenders (Lal Toofan 32%, Kaali Billi 44% recall).
+
+The model was chosen on development folds only (`compare_models` on india-2.0: logistic regression 80.7% ± 3.2 accuracy and 97.2% top-3, vs Random Forest 78.5% and 96.3%, gradient boosting 78.4% and 95.8%); the holdout above was scored once. On india-2.0 the candidate also passes the quality gate, but it still cannot be activated because the data is synthetic. The night window matches how the synthetic generator defines night; re-check it on real data.
 
 These numbers show that the models learn the patterns *designed into* the synthetic data. They are not evidence of real-world accuracy.
 

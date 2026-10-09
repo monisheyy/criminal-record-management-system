@@ -17,6 +17,10 @@ has none). What is realistic is the *structure*:
   specialises in a few crime types with its own habits. That gives the model
   real patterns to learn, so its accuracy on this data is meaningful *for
   this data only*.
+* Each case also records where it happened, what was targeted and how
+  (place, target and modus operandi, as on an FIR). Every crime type has its
+  own typical mix, with overlaps (an assault and a murder can both be physical
+  violence against a person) and a share of mis-recorded entries.
 * ``reoffended_2y`` is a simulated outcome (re-arrested within two years)
   driven mainly by prior convictions, age, gang membership and violence, used
   to train the learned danger score.
@@ -34,12 +38,16 @@ from pathlib import Path
 
 import numpy as np
 
-from app.constants import CRIME_TYPES, GANG_NAMES
+from app.constants import CASE_DETAIL_FIELDS, CRIME_TYPES, GANG_NAMES
 
 DATA_DIR = Path(__file__).resolve().parent
 OUTPUT = DATA_DIR / "india_crime_training_v1.csv"
 MANIFEST = DATA_DIR / "dataset_manifest.json"
 SEED = 42
+# Case details use their own random stream, so adding them left every other
+# column of the dataset exactly as it was.
+DETAIL_SEED = SEED + 1
+DETAIL_NOISE = 0.10  # share of case details drawn at random (recording errors, unusual cases)
 N_SAMPLES = 6000
 GANG_MEMBER_SHARE = 0.30
 SPECIALTY_SHARE = 0.85  # how often a gang member's crime is one of the gang's specialties
@@ -48,7 +56,8 @@ START, END = date(2018, 1, 1), date(2025, 12, 31)
 FEATURE_COLUMNS = ["prior_convictions", "age", "is_gang_member", "weapons_involved", "drug_involvement",
                    "financial_motivation", "tech_involvement", "violence_history", "location_risk",
                    "time_of_crime", "associates_count"]
-COLUMNS = FEATURE_COLUMNS + ["crime_type", "gang_label", "incident_date", "slice_state", "reoffended_2y"]
+DETAIL_COLUMNS = [f"{prefix}_{key}" for vocabulary, prefix in CASE_DETAIL_FIELDS.values() for key in vocabulary]
+COLUMNS = FEATURE_COLUMNS + DETAIL_COLUMNS + ["crime_type", "gang_label", "incident_date", "slice_state", "reoffended_2y"]
 
 # Indicative relative volumes (NCRB ordering, rare categories floored at 3%).
 CRIME_MIX = {
@@ -78,6 +87,65 @@ CRIME_PROFILES = {
     "Money Laundering":  (0.02, 0.10, 0.98, 0.65, 0.10, 43, 4.0, 0.2),
 }
 FACT_NAMES = ("weapons_involved", "drug_involvement", "financial_motivation", "tech_involvement")
+
+# Per-crime relative weights for the place of occurrence, the target and the
+# modus operandi (keys from app.constants.CASE_DETAIL_FIELDS; unlisted = 0).
+DETAIL_PROFILES = {
+    "Robbery": ({"public_place": .5, "business": .2, "transport": .15, "residence": .1, "financial": .05},
+                {"money": .6, "property": .3, "person": .1},
+                {"armed_threat": .65, "physical_violence": .25, "intimidation": .1}),
+    "Assault": ({"public_place": .45, "residence": .35, "business": .15, "transport": .05},
+                {"person": .95, "property": .05},
+                {"physical_violence": .8, "armed_threat": .1, "intimidation": .1}),
+    "Murder": ({"residence": .4, "public_place": .4, "business": .1, "transport": .1},
+               {"person": 1.0},
+               {"physical_violence": .6, "armed_threat": .3, "fire_damage": .05, "abduction": .05}),
+    "Drug Trafficking": ({"transport": .4, "public_place": .3, "residence": .2, "business": .1},
+                         {"contraband": .95, "money": .05},
+                         {"smuggling": .85, "deception": .1, "intimidation": .05}),
+    "Burglary": ({"residence": .65, "business": .3, "financial": .05},
+                 {"property": .75, "money": .25},
+                 {"forced_entry": .85, "deception": .1, "physical_violence": .05}),
+    "Cybercrime": ({"online": .85, "business": .1, "financial": .05},
+                   {"data": .6, "money": .4},
+                   {"cyber_intrusion": .8, "deception": .2}),
+    "Fraud": ({"online": .35, "business": .3, "financial": .25, "residence": .1},
+              {"money": .85, "data": .15},
+              {"deception": .85, "cyber_intrusion": .15}),
+    "Kidnapping": ({"public_place": .45, "residence": .3, "transport": .25},
+                   {"person": .95, "money": .05},
+                   {"abduction": .85, "armed_threat": .1, "intimidation": .05}),
+    "Arms Trafficking": ({"transport": .5, "public_place": .2, "business": .2, "residence": .1},
+                         {"contraband": .95, "money": .05},
+                         {"smuggling": .85, "armed_threat": .1, "deception": .05}),
+    "Extortion": ({"business": .5, "residence": .2, "online": .2, "public_place": .1},
+                  {"money": .85, "person": .15},
+                  {"intimidation": .75, "armed_threat": .15, "cyber_intrusion": .1}),
+    "Human Trafficking": ({"transport": .45, "public_place": .25, "online": .15, "residence": .15},
+                          {"person": .95, "money": .05},
+                          {"abduction": .45, "deception": .45, "intimidation": .1}),
+    "Car Theft": ({"public_place": .55, "residence": .3, "business": .15},
+                  {"vehicle": .95, "property": .05},
+                  {"forced_entry": .65, "deception": .2, "cyber_intrusion": .15}),
+    "Vandalism": ({"public_place": .55, "business": .25, "residence": .2},
+                  {"property": .95, "vehicle": .05},
+                  {"fire_damage": .8, "forced_entry": .2}),
+    "Arson": ({"residence": .45, "business": .4, "public_place": .15},
+              {"property": .9, "vehicle": .1},
+              {"fire_damage": .95, "forced_entry": .05}),
+    "Money Laundering": ({"financial": .55, "business": .3, "online": .15},
+                         {"money": .95, "data": .05},
+                         {"deception": .9, "cyber_intrusion": .1}),
+}
+
+
+def detail_probabilities(crime: str) -> list:
+    """Probability of each option of each case detail for a crime, noise included."""
+    result = []
+    for weights, (vocabulary, _prefix) in zip(DETAIL_PROFILES[crime], CASE_DETAIL_FIELDS.values()):
+        p = np.asarray([weights.get(key, 0.0) for key in vocabulary], dtype=float)
+        result.append((1 - DETAIL_NOISE) * p / p.sum() + DETAIL_NOISE / len(vocabulary))
+    return result
 
 # Fictional gangs. "specialties" are crime types with relative weights; the
 # habits (age shift, night preference, extra associates, extra fact tendencies)
@@ -121,7 +189,7 @@ GANGS = {
     },
 }
 assert list(GANGS) == GANG_NAMES, "GANGS must match app.constants.GANG_NAMES"
-assert set(CRIME_MIX) == set(CRIME_PROFILES) == set(CRIME_TYPES)
+assert set(CRIME_MIX) == set(CRIME_PROFILES) == set(DETAIL_PROFILES) == set(CRIME_TYPES)
 
 # Weights roughly following population, for the analysis slice only.
 STATE_WEIGHTS = {
@@ -145,6 +213,7 @@ def _pick(rng: np.random.RandomState, weights: dict) -> str:
 
 def generate_rows(n_samples: int = N_SAMPLES) -> list:
     rng = np.random.RandomState(SEED)
+    detail_rng = np.random.RandomState(DETAIL_SEED)
     span = (END - START).days
     rows = []
     for _ in range(n_samples):
@@ -175,10 +244,15 @@ def generate_rows(n_samples: int = N_SAMPLES) -> list:
                  + 0.9 * SEVERITY[crime])
         reoffended = int(rng.rand() < 1.0 / (1.0 + np.exp(-logit)))
 
+        details = []
+        for p in detail_probabilities(crime):
+            chosen = int(detail_rng.choice(len(p), p=p))
+            details.extend(int(index == chosen) for index in range(len(p)))
+
         gang_label = next(name for name, g in GANGS.items() if g is gang) if gang else "None"
         rows.append([prior, age, int(member), facts["weapons_involved"], facts["drug_involvement"],
                      facts["financial_motivation"], facts["tech_involvement"], violence, location_risk, hour,
-                     associates, crime, gang_label, incident.isoformat(), state, reoffended])
+                     associates, *details, crime, gang_label, incident.isoformat(), state, reoffended])
     return rows
 
 
@@ -190,20 +264,21 @@ def write_dataset(rows: list) -> str:
     digest = hashlib.sha256(OUTPUT.read_bytes()).hexdigest()
     manifest = {
         "dataset_name": "AI-CRMS India Demonstration Crime Training Dataset",
-        "dataset_version": "india-1.0",
+        "dataset_version": "india-2.0",
         "dataset_type": "synthetic_demonstration",
         "generated_with_seed": SEED,
         "rows": len(rows),
-        "feature_columns": FEATURE_COLUMNS,
+        "feature_columns": FEATURE_COLUMNS + DETAIL_COLUMNS,
         "target_columns": ["crime_type", "gang_label"],
         "optional_columns": ["incident_date", "slice_state", "reoffended_2y"],
         "sha256": digest,
         "source": ("Deterministic synthetic generator (app/ml/data/generate_india_dataset.py). Crime mix follows the "
                    "broad ordering of NCRB 'Crime in India' offence volumes (indicative shares, rare classes "
                    "floored); gangs are fictional. No real person, case or gang."),
-        "label_definition": "Simulated: crime_type and gang_label from fictional gang/crime profiles; "
+        "label_definition": "Simulated: crime_type and gang_label from fictional gang/crime profiles "
+                            "(case details from per-crime place/target/method mixes with 10% noise); "
                             "reoffended_2y simulated from prior convictions, age, membership and violence.",
-        "schema_version": "1.2",
+        "schema_version": "2.0",
     }
     MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return digest

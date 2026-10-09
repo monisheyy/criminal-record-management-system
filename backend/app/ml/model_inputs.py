@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from app.constants import CASE_DETAIL_FIELDS
 from app.ml.pipeline import CASE_INCIDENT_FEATURES
 
 
@@ -43,4 +44,8 @@ def model_input(criminal: Optional[Any] = None, case: Optional[Any] = None) -> D
             value = getattr(case, name)
             if value is not None:
                 data[name] = int(value)
+        for name in CASE_DETAIL_FIELDS:
+            value = getattr(case, name)
+            if value:
+                data[name] = value
     return data
