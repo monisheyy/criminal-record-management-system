@@ -20,7 +20,7 @@ def _bearer(token):
 def _write_dated_copy(tmp_path, *, extra_header=("incident_date", "slice_district"), blank_date_row=None, limit=None):
     """Copy the demo dataset's schema columns, appending an incident date and a district slice."""
     with ml.DATASET_PATH.open(newline="", encoding="utf-8") as handle:
-        rows = [row[:13] for row in csv.reader(handle)]
+        rows = [row[:len(ml.FEATURE_COLUMNS) + 2] for row in csv.reader(handle)]  # features + 2 targets
     if limit is not None:
         rows = rows[:limit + 1]
     start = datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -123,8 +123,9 @@ def test_compare_models_excludes_locked_holdout(monkeypatch):
     assert report["development_rows"] + report["holdout"]["rows_excluded"] == report["dataset"]["rows"]
     assert report["results"]["random_forest"]["folds_evaluated"] >= 2
     assert report["summary"]["best_by_macro_f1"] == "random_forest"
-    # The bundled demo data has no real signal; it must not look release-ready.
-    assert report["summary"]["best_meets_gate_thresholds_in_cv"] is False
+    # Scores on the demo data can reach the gate thresholds; activation is still
+    # refused because of the dataset type, never because of the scores.
+    assert report["dataset"]["dataset_type"] in ml.UNVALIDATED_DATASET_TYPES
 
 
 def test_case_incident_facts_are_stored_and_used_as_observed_model_inputs(client, admin_token):
@@ -142,6 +143,26 @@ def test_case_incident_facts_are_stored_and_used_as_observed_model_inputs(client
     quality = r.json()["input_features"]["feature_input_quality"]
     assert {"weapons_involved", "drug_involvement"} <= set(quality["observed_features"])
     assert {"financial_motivation", "tech_involvement"} <= set(quality["defaulted_features"])
+
+
+def test_case_details_are_stored_and_drive_the_crime_suggestion(client, admin_token):
+    title = "Case details " + "".join(random.choices(string.ascii_lowercase, k=6))
+    created = client.post("/api/cases", json={
+        "title": title, "location_type": "Online", "target_type": "data", "modus_operandi": "cyber_intrusion",
+    }, headers=_bearer(admin_token))
+    assert created.status_code == 200, created.text
+    case = created.json()
+    assert (case["location_type"], case["target_type"], case["modus_operandi"]) == ("online", "data", "cyber_intrusion")
+
+    r = client.post("/api/ai/predict", json={"case_id": case["id"]}, headers=_bearer(admin_token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert {"location_online", "target_data", "method_cyber_intrusion"} <= set(
+        body["input_features"]["feature_input_quality"]["observed_features"])
+    assert body["predicted_crime_type"] == "Cybercrime"
+
+    bad = client.post("/api/cases", json={"title": "Bad detail", "location_type": "moon"}, headers=_bearer(admin_token))
+    assert bad.status_code == 422
 
 
 def test_incident_facts_reject_non_boolean_values(client, admin_token):

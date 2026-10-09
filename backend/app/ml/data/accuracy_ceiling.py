@@ -19,6 +19,7 @@ import numpy as np
 from scipy.stats import beta, norm, poisson
 from sklearn.metrics import roc_auc_score
 
+from app.constants import CASE_DETAIL_FIELDS
 from app.ml.data import generate_india_dataset as G
 from app.ml.pipeline import TEST_SIZE, TOP_K_SUGGESTIONS
 
@@ -60,6 +61,10 @@ def _likelihood(row: Dict[str, str], gang: Optional[str], crime: str, use_member
     value *= _capped_poisson(violence, viol_mu + 0.8 * member, 20)
     value *= _capped_poisson(int(row["prior_convictions"]), 0.5 + member + 0.25 * violence + 0.04 * max(age - 20, 0), 30)
     value *= beta.pdf(max(float(row["location_risk"]), 1e-6), 2 + 3 * member + 2 * (viol_mu > 1.8), 4)
+    for p, (vocabulary, prefix) in zip(G.detail_probabilities(crime), CASE_DETAIL_FIELDS.values()):
+        recorded = [index for index, key in enumerate(vocabulary) if row.get(f"{prefix}_{key}") == "1"]
+        if recorded:  # rows without case details (older datasets) skip this factor
+            value *= p[recorded[0]]
     return value
 
 
