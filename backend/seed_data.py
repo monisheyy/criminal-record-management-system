@@ -325,6 +325,12 @@ def seed_database(db: Session):
         db.refresh(c)
     log.info(f"  Created {len(created_criminals)} criminals")
 
+    # Illustrated sample mugshots (synthetic, not real people) so the
+    # directory and profile pop-up show faces out of the box.
+    from app.utils.sample_photos import assign_sample_photos
+    log.info(f"  Attached sample photos to {assign_sample_photos(db)} criminals")
+    db.commit()
+
     # ── Criminal History ──────────────────────────────────────────────────────
     log.info("  Creating criminal histories...")
     event_types = ['arrest', 'conviction', 'release', 'bail_granted', 'wanted_notice', 'sighting', 'associate_link']
