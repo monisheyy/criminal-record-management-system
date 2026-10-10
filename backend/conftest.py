@@ -3,8 +3,8 @@ conftest.py — configures an isolated test environment before any app module is
 
 * In-memory database, created through the real Alembic migrations (so every
   test run also checks that the migrations produce a working schema).
-* ML artifacts are written to a throw-away directory: tests can never
-  overwrite the developer's active model in app/ml/saved_models.
+* ML artifacts and uploaded files are written to throw-away directories:
+  tests can never overwrite the developer's active model or uploads.
 * Demo seeding is off and auth rate limits are relaxed; dedicated tests
   tighten them explicitly.
 """
@@ -21,6 +21,7 @@ os.environ.setdefault("RATE_LIMIT_AUTH_PER_MINUTE", "10000")
 os.environ.setdefault("LOGIN_MAX_FAILED_ATTEMPTS", "5")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
 os.environ.setdefault("AI_CRMS_MODEL_DIR", tempfile.mkdtemp(prefix="ai_crms_test_models_"))
+os.environ.setdefault("AI_CRMS_UPLOAD_DIR", tempfile.mkdtemp(prefix="ai_crms_test_uploads_"))
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

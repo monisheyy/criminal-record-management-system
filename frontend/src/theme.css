@@ -86,7 +86,7 @@ a:hover { color: var(--link); text-decoration: underline; text-underline-offset:
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 .app-layout, .main-content { background: transparent; }
-.main-content { max-width: 1240px; padding: 44px 48px 72px; min-width: 0; width: 100%; }
+.main-content { max-width: 1480px; padding: 44px 48px 72px; min-width: 0; width: 100%; }
 
 .page-header { border-bottom: none; padding-bottom: 0; margin-bottom: 32px; align-items: flex-end; gap: 24px; }
 .page-title { font-size: 2.15rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
@@ -392,11 +392,6 @@ tbody tr:hover { background: #FAFAFC; }
   .dashboard-split { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
-  .sidebar-classification-banner, .sidebar-user-info, .sidebar-action-label { display: none; }
-  .sidebar-user-card { justify-content: center; padding: 6px; }
-  .sidebar-footer { padding: 10px 6px; }
-  .sidebar-footer > div:last-child { flex-direction: column; align-items: center; }
-  .sidebar-footer > div:last-child .btn { flex: none; width: 36px; height: 32px; padding: 0; }
   .main-content { padding: 32px 28px 56px; }
   .header { padding: 0 24px; }
 }
@@ -415,3 +410,238 @@ tbody tr:hover { background: #FAFAFC; }
 /* Tiles nested inside a card sit flat on a light fill (no shadow-on-shadow). */
 .card .stat-card { box-shadow: none; background: var(--fill); }
 .card .stat-card:hover { box-shadow: none; }
+
+/* ── Incident map ─────────────────────────────────────────────────────────── */
+.incident-map-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start; }
+.incident-map-card { padding: 0; overflow: hidden; }
+.incident-map { height: 620px; width: 100%; background: var(--fill); }
+.incident-map-side .card { margin-bottom: 16px; padding: 22px; }
+.incident-map-side .card-title { margin-bottom: 12px; }
+.city-list, .map-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.city-row { display: grid; grid-template-columns: 96px 1fr 28px; gap: 10px; align-items: center; width: 100%;
+  background: none; border: 0; padding: 6px 4px; border-radius: var(--radius-sm); color: var(--text-primary);
+  font: inherit; font-size: 0.88rem; text-align: left; cursor: pointer; }
+.city-row:hover, .city-row:focus-visible { background: var(--fill); }
+.city-row .td-mono { text-align: right; }
+.city-bar { height: 7px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.city-bar span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.map-legend li { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center; font-size: 0.88rem; }
+.map-dot { width: 10px; height: 10px; border-radius: 50%; }
+.map-popup { display: grid; gap: 3px; font-size: 0.85rem; min-width: 200px; }
+@media (max-width: 1000px) {
+  .incident-map-layout { grid-template-columns: 1fr; }
+  .incident-map { height: 440px; }
+}
+
+/* ── Offender photo ───────────────────────────────────────────────────────── */
+.profile-photo { width: 96px; height: 120px; border-radius: 10px; object-fit: cover; background: var(--fill); flex: none; }
+.profile-photo-wrap { display: grid; gap: 6px; justify-items: center; flex: none; }
+.profile-photo-actions { display: flex; gap: 4px; }
+.profile-photo-actions .btn { padding: 3px 8px; font-size: 0.75rem; }
+
+/* ── Brand emblem ─────────────────────────────────────────────────────────── */
+.brand-mark { display: block; flex-shrink: 0; border-radius: 50%; }
+.sidebar-brand .brand-mark { width: 32px; height: 32px; }
+.signin-bar .brand-mark { width: 24px; height: 24px; }
+.signin-emblem { width: 112px; height: 112px; margin: 0 auto 20px; filter: drop-shadow(0 10px 22px rgba(14, 21, 36, 0.22)); }
+.auth-emblem { width: 56px; height: 56px; margin-bottom: 12px; }
+
+/* ── Page transition curtain ──────────────────────────────────────────────── */
+.route-curtain {
+  position: fixed; inset: 0; z-index: 10000;
+  display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 42%, #22355A 0%, #111B33 46%, #070B17 100%);
+  transform: translateY(100%); visibility: hidden; pointer-events: none;
+}
+.route-curtain::before, .route-curtain::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, #A8751B 18%, #FFF3C4 50%, #A8751B 82%, transparent);
+}
+.route-curtain::before { top: 0; }
+.route-curtain::after { bottom: 0; }
+.route-curtain[data-phase='intro'], .route-curtain[data-phase='cover'], .route-curtain[data-phase='hold'] {
+  transform: translateY(0); visibility: visible; pointer-events: auto;
+  transition: transform 520ms cubic-bezier(0.77, 0, 0.18, 1);
+}
+.route-curtain[data-phase='reveal'] {
+  transform: translateY(-100%); visibility: visible;
+  transition: transform 650ms cubic-bezier(0.77, 0, 0.18, 1) 60ms;
+}
+.route-curtain-inner { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.route-curtain-emblem {
+  position: relative; width: min(220px, 48vw); aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+  opacity: 0; transform: scale(0.84);
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.5));
+}
+.route-curtain-emblem img { display: block; width: 100%; height: 100%; }
+.route-curtain-emblem::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 243, 196, 0.55) 50%, transparent 62%);
+  background-size: 260% 100%; background-position: 130% 0; mix-blend-mode: overlay;
+}
+.route-curtain-caption {
+  font-family: 'Cinzel', 'Trajan Pro', Georgia, 'Times New Roman', serif;
+  font-size: 0.72rem; letter-spacing: 0.34em; text-transform: uppercase; color: #D9B45A;
+  opacity: 0; transform: translateY(8px);
+}
+.route-curtain-rule {
+  width: 140px; height: 1px; transform: scaleX(0);
+  background: linear-gradient(90deg, transparent, #E2C277, transparent);
+}
+.route-curtain[data-phase='intro'] .route-curtain-emblem,
+.route-curtain[data-phase='cover'] .route-curtain-emblem,
+.route-curtain[data-phase='hold'] .route-curtain-emblem {
+  opacity: 1; transform: scale(1);
+  transition: opacity 420ms ease 200ms, transform 900ms cubic-bezier(0.2, 0.8, 0.2, 1) 200ms;
+}
+.route-curtain[data-phase='intro'] .route-curtain-emblem::after,
+.route-curtain[data-phase='cover'] .route-curtain-emblem::after,
+.route-curtain[data-phase='hold'] .route-curtain-emblem::after {
+  animation: crms-shimmer 1100ms ease 380ms both;
+}
+.route-curtain[data-phase='intro'] .route-curtain-caption,
+.route-curtain[data-phase='cover'] .route-curtain-caption,
+.route-curtain[data-phase='hold'] .route-curtain-caption {
+  opacity: 1; transform: none; transition: opacity 500ms ease 420ms, transform 500ms ease 420ms;
+}
+.route-curtain[data-phase='intro'] .route-curtain-rule,
+.route-curtain[data-phase='cover'] .route-curtain-rule,
+.route-curtain[data-phase='hold'] .route-curtain-rule {
+  transform: scaleX(1); transition: transform 800ms cubic-bezier(0.2, 0.8, 0.2, 1) 300ms;
+}
+.route-curtain[data-phase='reveal'] .route-curtain-emblem { opacity: 0; transform: scale(1.04) translateY(-24px); transition: opacity 320ms ease, transform 420ms ease; }
+.route-curtain[data-phase='reveal'] .route-curtain-caption,
+.route-curtain[data-phase='reveal'] .route-curtain-rule { opacity: 0; transition: opacity 240ms ease; }
+@keyframes crms-shimmer { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) { .route-curtain { display: none; } }
+
+/* ── Offender pop-up card (Criminals directory) ──────────────────────────── */
+.row-clickable { cursor: pointer; }
+.person-avatar-photo { object-fit: cover; object-position: 50% 28%; background: #1f2633; }
+.person-link { background: none; border: 0; padding: 0; font: inherit; text-align: left; cursor: pointer; }
+.person-link:hover { color: var(--accent); }
+.person-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.qv-overlay {
+  position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(16, 24, 40, 0.55), rgba(4, 7, 14, 0.78));
+  backdrop-filter: blur(14px) saturate(120%); -webkit-backdrop-filter: blur(14px) saturate(120%);
+  animation: fade 180ms ease;
+}
+.qv-card {
+  --qv-text: #f2f3f6; --qv-muted: rgba(235, 238, 245, 0.55); --qv-line: rgba(255, 255, 255, 0.1); --qv-gold: #d4b062;
+  width: min(900px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+  display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 8px; padding: 12px;
+  color: var(--qv-text); border-radius: 30px;
+  background: linear-gradient(155deg, rgba(44, 52, 70, 0.82), rgba(16, 20, 32, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(30px) saturate(150%); -webkit-backdrop-filter: blur(30px) saturate(150%);
+  animation: sheet 240ms cubic-bezier(.25, .8, .25, 1);
+}
+.qv-media { position: relative; }
+.qv-photo {
+  display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 22px;
+  background: #1a202c; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08); animation: fade 220ms ease;
+}
+.qv-photo-empty { display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--qv-muted); }
+.qv-photo-empty span { font-size: 4rem; font-weight: 600; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.75); }
+.qv-photo-empty small { font-size: 0.8rem; }
+
+.qv-info { display: flex; flex-direction: column; padding: 14px 14px 10px 22px; min-width: 0; }
+.qv-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.qv-crn { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.78rem; letter-spacing: 0.08em; color: var(--qv-gold); }
+.qv-name { margin: 14px 0 0; font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; color: var(--qv-text); }
+.qv-alias { margin: 6px 0 0; color: var(--qv-muted); font-size: 0.95rem; }
+
+.qv-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.qv-tag {
+  padding: 5px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; text-transform: capitalize;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--qv-text);
+}
+.qv-tag-wanted { background: rgba(255, 69, 58, 0.18); border-color: rgba(255, 69, 58, 0.45); color: #ff8a80; }
+.qv-threat-low { color: #7ee2a0; } .qv-threat-medium { color: #ffc764; }
+.qv-threat-high { color: #ff9f5a; } .qv-threat-critical { color: #ff7b72; }
+
+.qv-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; margin: 26px 0 0; padding: 22px 0 0; border-top: 1px solid var(--qv-line); }
+.qv-facts dt { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--qv-muted); }
+.qv-facts dd { margin: 4px 0 0; font-size: 0.98rem; font-weight: 500; color: var(--qv-text); overflow-wrap: anywhere; }
+.qv-facts .qv-wide { grid-column: 1 / -1; }
+
+.qv-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 24px; }
+.qv-pager { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--qv-muted); }
+.qv-icon-btn {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--qv-text);
+  transition: background 150ms ease;
+}
+.qv-icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+.qv-icon-btn:disabled { opacity: 0.35; cursor: default; }
+.qv-open {
+  display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 999px;
+  font-size: 0.85rem; font-weight: 600; color: #141821; background: var(--qv-gold); text-decoration: none;
+}
+.qv-open:hover { background: #e2c179; color: #141821; }
+.qv-card :focus-visible { outline: 2px solid var(--qv-gold); outline-offset: 2px; }
+
+@media (max-width: 720px) {
+  .qv-card { grid-template-columns: 1fr; border-radius: 24px; }
+  .qv-photo { aspect-ratio: auto; height: 42vh; object-position: 50% 30%; }
+  .qv-info { padding: 12px 8px 6px; }
+}
+@media (prefers-reduced-motion: reduce) { .qv-overlay, .qv-card, .qv-photo { animation: none; } }
+
+/* ── Hover sidebar: slim icon rail that opens over the page ────────────────── */
+/* Collapsed it is an icon rail; on hover, keyboard focus or a tap on the emblem it widens
+   over the content (the page underneath never moves). Inner blocks keep the full width
+   so nothing reflows while it opens; the rail simply clips them. */
+:root { --rail-width: 64px; }
+.main-content { margin-left: var(--rail-width); }
+.header { left: var(--rail-width); }
+
+.sidebar {
+  width: var(--rail-width); overflow: clip; z-index: 200;
+  transition: width 200ms cubic-bezier(0.2, 0, 0, 1), box-shadow 200ms ease, background-color 200ms ease;
+}
+.sidebar > * { width: var(--sidebar-width); flex-shrink: 0; }
+.sidebar:hover, .sidebar.is-open, .sidebar:has(:focus-visible) {
+  width: var(--sidebar-width);
+  background: rgba(246, 246, 248, 0.97);
+  box-shadow: var(--shadow-lg);
+}
+
+.sidebar-brand {
+  display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  background: none; border: 0; font: inherit; text-align: left; cursor: pointer; color: inherit;
+}
+.sidebar-brand-text { display: flex; flex-direction: column; line-height: 1.25; }
+.sidebar-link {
+  gap: 12px; padding: 7px 13px; white-space: nowrap; overflow: hidden;
+  max-width: 44px; transition: max-width 200ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms ease;
+}
+.sidebar:hover .sidebar-link, .sidebar.is-open .sidebar-link, .sidebar:has(:focus-visible) .sidebar-link { max-width: 100%; }
+.sidebar-footer { padding: 12px 10px; }
+.sidebar-user-card { padding: 6px; }
+
+/* Text that only shows while the rail is open. */
+.sidebar-brand-text, .sidebar-classification-banner, .sidebar-group-title,
+.sidebar-link-label, .sidebar-user-info, .sidebar-footer > div:last-child {
+  opacity: 0; transition: opacity 120ms ease;
+}
+.sidebar-classification-banner, .sidebar-footer > div:last-child { visibility: hidden; transition: opacity 120ms ease, visibility 0s linear 120ms; }
+.sidebar:hover :is(.sidebar-brand-text, .sidebar-classification-banner, .sidebar-group-title, .sidebar-link-label, .sidebar-user-info, .sidebar-footer > div:last-child),
+.sidebar.is-open :is(.sidebar-brand-text, .sidebar-classification-banner, .sidebar-group-title, .sidebar-link-label, .sidebar-user-info, .sidebar-footer > div:last-child),
+.sidebar:has(:focus-visible) :is(.sidebar-brand-text, .sidebar-classification-banner, .sidebar-group-title, .sidebar-link-label, .sidebar-user-info, .sidebar-footer > div:last-child) {
+  opacity: 1; visibility: visible; transition: opacity 160ms ease 60ms, visibility 0s;
+}
+
+/* Unread count: a small pill on the bell icon while collapsed, plain text when open. */
+.sidebar .sidebar-badge {
+  position: absolute; top: 1px; left: 24px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: #D93025; color: #fff; font-size: 0.62rem; font-weight: 600;
+  display: grid; place-items: center; line-height: 1;
+}
+.sidebar:hover .sidebar-badge, .sidebar.is-open .sidebar-badge, .sidebar:has(:focus-visible) .sidebar-badge {
+  position: static; margin-left: auto; min-width: 0; height: auto; padding: 0;
+  background: none; color: var(--ink-3); font-size: 0.78rem; font-weight: 500;
+}

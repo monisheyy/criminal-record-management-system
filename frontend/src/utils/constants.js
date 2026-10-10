@@ -26,6 +26,47 @@ export const CASE_INCIDENT_FACTS = [
   { key: 'tech_involvement', label: 'Technology used' },
 ];
 
+// Incident details recorded as on an FIR; keys match app.constants.CASE_DETAIL_FIELDS
+// in the backend and become AI model inputs.
+export const CASE_INCIDENT_DETAILS = [
+  {
+    key: 'location_type', label: 'Type of place',
+    options: [
+      { value: 'residence', label: 'Home / residence' },
+      { value: 'business', label: 'Shop, office or business' },
+      { value: 'public_place', label: 'Street or public place' },
+      { value: 'transport', label: 'Vehicle, transport or highway' },
+      { value: 'financial', label: 'Bank, ATM or financial office' },
+      { value: 'online', label: 'Online or by phone' },
+    ],
+  },
+  {
+    key: 'target_type', label: 'Target',
+    options: [
+      { value: 'person', label: 'A person' },
+      { value: 'property', label: 'Goods or property' },
+      { value: 'vehicle', label: 'A vehicle' },
+      { value: 'money', label: 'Money or financial assets' },
+      { value: 'data', label: 'Data, accounts or identity' },
+      { value: 'contraband', label: 'Drugs, arms or contraband' },
+    ],
+  },
+  {
+    key: 'modus_operandi', label: 'Modus operandi',
+    options: [
+      { value: 'forced_entry', label: 'Forced entry or break-in' },
+      { value: 'armed_threat', label: 'Threat with a weapon' },
+      { value: 'physical_violence', label: 'Physical violence' },
+      { value: 'deception', label: 'Deception, cheating or impersonation' },
+      { value: 'cyber_intrusion', label: 'Hacking, phishing or digital intrusion' },
+      { value: 'smuggling', label: 'Concealed transport or smuggling' },
+      { value: 'abduction', label: 'Taking or holding a person' },
+      { value: 'fire_damage', label: 'Fire or deliberate damage' },
+      { value: 'intimidation', label: 'Threats or coercion' },
+    ],
+  },
+];
+
 export const CASE_STATUSES = [
   { value: 'open', label: 'Open' },
   { value: 'under_investigation', label: 'Under investigation' },

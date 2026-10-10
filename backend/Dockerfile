@@ -17,11 +17,12 @@ COPY migrations ./migrations
 COPY scripts ./scripts
 
 RUN useradd --system --uid 10001 --home /app crms \
-    && mkdir -p /var/lib/ai-crms/models \
+    && mkdir -p /var/lib/ai-crms/models /var/lib/ai-crms/uploads \
     && chown -R crms /var/lib/ai-crms /app/app/ml/saved_models
 USER crms
 
-ENV AI_CRMS_MODEL_DIR=/var/lib/ai-crms/models
+ENV AI_CRMS_MODEL_DIR=/var/lib/ai-crms/models \
+    AI_CRMS_UPLOAD_DIR=/var/lib/ai-crms/uploads
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

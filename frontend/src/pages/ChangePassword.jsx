@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { KeyRound, LogOut, Shield } from 'lucide-react';
+import { KeyRound, LogOut } from 'lucide-react';
+import seal from '../assets/brand/crms-seal.svg';
 import { useAuth } from '../contexts/AuthContext';
 import { getErrorMessage } from '../services/api';
 import { FieldHint } from '../components/ui';
@@ -44,7 +45,7 @@ export default function ChangePassword() {
     <main className="auth-page">
       <div className="auth-card">
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <div className="auth-logo" aria-hidden="true"><Shield size={20} /></div>
+          <img className="auth-emblem" src={seal} alt="" aria-hidden="true" width="56" height="56" />
           <h1 className="auth-title">{forced ? 'Set a new password' : 'Change password'}</h1>
           <p className="auth-subtitle">
             {forced

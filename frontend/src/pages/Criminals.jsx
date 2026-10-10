@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Eye, Plus, Search, Shield } from 'lucide-react';
-import { criminalsAPI, getErrorMessage, totalCount } from '../services/api';
+import { criminalPhotoUrl, criminalsAPI, getErrorMessage } from '../services/api';
 import { getFieldErrors } from '../utils/errors';
 import { CRIME_TYPES, GENDERS, THREAT_LEVELS } from '../utils/constants';
 import { formatDate, todayInputValue } from '../utils/format';
+import { usePagedList } from '../utils/usePagedList';
 import { EmptyState, ErrorState, FieldError, LoadingState, Modal, Pagination } from '../components/ui';
+import OffenderQuickView from '../components/OffenderQuickView';
 
 const PAGE_SIZE = 25;
 const AVATAR_TONES = ['indigo', 'violet', 'sky', 'emerald', 'amber', 'rose'];
@@ -24,6 +26,18 @@ function useDebounced(value, delay = 350) {
   return debounced;
 }
 
+function Avatar({ criminal }) {
+  const [failed, setFailed] = useState(false);
+  const initials = `${criminal.first_name?.[0] || ''}${criminal.last_name?.[0] || ''}`.toUpperCase();
+  if (criminal.photo_sha256 && !failed) {
+    return (
+      <img className="person-avatar person-avatar-photo" src={criminalPhotoUrl(criminal.id, criminal.photo_sha256)} alt=""
+        loading="lazy" onError={() => setFailed(true)} />
+    );
+  }
+  return <span className={`person-avatar tone-${AVATAR_TONES[criminal.id % AVATAR_TONES.length]}`} aria-hidden="true">{initials}</span>;
+}
+
 function StatusPill({ criminal }) {
   if (criminal.is_wanted) return <span className="badge badge-red">Wanted</span>;
   if (criminal.is_incarcerated) return <span className="badge badge-gray">Incarcerated</span>;
@@ -35,25 +49,30 @@ function CreateCriminalModal({ onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
-  const [duplicates, setDuplicates] = useState([]);
+  // Live duplicate check, tagged with the names it was run for; a 409 on save replaces it.
+  const [liveCheck, setLiveCheck] = useState({ key: '', list: [] });
+  const [confirmedDuplicates, setDuplicates] = useState(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const first = useDebounced(form.first_name.trim());
   const last = useDebounced(form.last_name.trim());
   const dob = useDebounced(form.date_of_birth);
 
+  const checkKey = first.length < 2 || last.length < 2 ? '' : JSON.stringify([first, last, dob]);
   useEffect(() => {
-    if (first.length < 2 || last.length < 2) { setDuplicates([]); return; }
+    if (!checkKey) return undefined;
     let cancelled = false;
     criminalsAPI.checkDuplicate({ first_name: first, last_name: last, date_of_birth: dob || undefined })
-      .then((res) => { if (!cancelled) setDuplicates(res.data.duplicates || []); })
-      .catch(() => { if (!cancelled) setDuplicates([]); });
+      .then((res) => { if (!cancelled) setLiveCheck({ key: checkKey, list: res.data.duplicates || [] }); })
+      .catch(() => { if (!cancelled) setLiveCheck({ key: checkKey, list: [] }); });
     return () => { cancelled = true; };
-  }, [first, last, dob]);
+  }, [checkKey, first, last, dob]);
+  const duplicates = confirmedDuplicates ?? (checkKey && liveCheck.key === checkKey ? liveCheck.list : []);
 
   const set = (key) => (e) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setForm((f) => ({ ...f, [key]: value }));
     setFieldErrors((errs) => ({ ...errs, [key]: undefined }));
+    if (['first_name', 'last_name', 'date_of_birth'].includes(key)) setDuplicates(null);
   };
 
   const submit = async (e) => {
@@ -191,29 +210,14 @@ function CreateCriminalModal({ onClose, onCreated }) {
 }
 
 export default function Criminals() {
-  const [rows, setRows] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ crime_type: '', threat_level: '', is_wanted: '', sort: '' });
   const [creating, setCreating] = useState(false);
+  // Index into `rows` of the offender shown in the pop-up card.
+  const [viewing, setViewing] = useState(null);
   const debouncedSearch = useDebounced(search.trim());
-  const requestRef = useRef(0);
-
-  const load = useCallback(() => {
-    const requestId = ++requestRef.current; // ignore responses that arrive out of order
-    setLoading(true);
-    setError('');
-    criminalsAPI.list({ search: debouncedSearch, ...filters, skip: page * PAGE_SIZE, limit: PAGE_SIZE })
-      .then((res) => { if (requestId === requestRef.current) { setRows(res.data || []); setTotal(totalCount(res)); } })
-      .catch((err) => { if (requestId === requestRef.current) setError(getErrorMessage(err, 'Failed to load records.')); })
-      .finally(() => { if (requestId === requestRef.current) setLoading(false); });
-  }, [debouncedSearch, filters, page]);
-
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(0); }, [debouncedSearch, filters]);
+  const list = usePagedList(criminalsAPI.list, { search: debouncedSearch, ...filters }, PAGE_SIZE);
+  const { rows, total, page, setPage, loading, error, reload: load } = list;
 
   const setFilter = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
 
@@ -284,15 +288,19 @@ export default function Criminals() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((c) => (
-                    <tr key={c.id}>
+                  {rows.map((c, i) => (
+                    <tr key={c.id} className="row-clickable" onClick={() => setViewing(i)}>
                       <td className="td-mono">{c.crn}</td>
                       <td>
                         <div className="person-cell">
-                          <span className={`person-avatar tone-${AVATAR_TONES[c.id % AVATAR_TONES.length]}`} aria-hidden="true">
-                            {`${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase()}
-                          </span>
-                          <div><div className="td-primary">{c.first_name} {c.last_name}</div>{c.alias && <div className="td-sub">aka {c.alias}</div>}</div>
+                          <Avatar criminal={c} />
+                          <div>
+                            <button type="button" className="person-link td-primary" aria-haspopup="dialog"
+                              onClick={(e) => { e.stopPropagation(); setViewing(i); }}>
+                              {c.first_name} {c.last_name}
+                            </button>
+                            {c.alias && <div className="td-sub">aka {c.alias}</div>}
+                          </div>
                         </div>
                       </td>
                       <td>{c.crime_type || 'Not classified'}</td>
@@ -300,7 +308,7 @@ export default function Criminals() {
                       <td><StatusPill criminal={c} /></td>
                       <td className="td-date">{formatDate(c.created_at)}</td>
                       <td style={{ textAlign: 'right' }}>
-                        <Link to={`/criminals/${c.id}`} className="btn btn-secondary btn-sm" aria-label={`Open record for ${c.first_name} ${c.last_name}`}>
+                        <Link to={`/criminals/${c.id}`} className="btn btn-secondary btn-sm" onClick={(e) => e.stopPropagation()} aria-label={`Open record for ${c.first_name} ${c.last_name}`}>
                           <Eye size={12} aria-hidden="true" /> Open
                         </Link>
                       </td>
@@ -314,6 +322,10 @@ export default function Criminals() {
           <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
         )}
       </div>
+
+      {viewing !== null && rows[viewing] && (
+        <OffenderQuickView rows={rows} index={viewing} onIndexChange={setViewing} onClose={() => setViewing(null)} />
+      )}
 
       {creating && (
         <CreateCriminalModal onClose={() => setCreating(false)} onCreated={() => { setCreating(false); setPage(0); load(); }} />

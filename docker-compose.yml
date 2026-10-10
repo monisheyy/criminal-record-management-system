@@ -42,6 +42,7 @@ services:
     environment: *backend-env
     volumes:
       - model-data:/var/lib/ai-crms/models
+      - upload-data:/var/lib/ai-crms/uploads
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -59,3 +60,4 @@ services:
 volumes:
   db-data:
   model-data:
+  upload-data:

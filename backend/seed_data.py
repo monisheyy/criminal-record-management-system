@@ -57,7 +57,7 @@ LOCATIONS = [
 THREAT_LEVELS = ['low', 'medium', 'high', 'critical']
 PRIORITIES = ['low', 'normal', 'high', 'critical']
 
-from app.ml.data.generate_india_dataset import CRIME_PROFILES, GANGS  # noqa: E402
+from app.ml.data.generate_india_dataset import CRIME_PROFILES, DETAIL_PROFILES, GANGS  # noqa: E402
 
 # Fictional gangs: the same names and specialities the AI is trained on.
 GANG_MEMBER_COUNTS = [41, 33, 27, 30, 22, 18]
@@ -325,6 +325,12 @@ def seed_database(db: Session):
         db.refresh(c)
     log.info(f"  Created {len(created_criminals)} criminals")
 
+    # Illustrated sample mugshots (synthetic, not real people) so the
+    # directory and profile pop-up show faces out of the box.
+    from app.utils.sample_photos import assign_sample_photos
+    log.info(f"  Attached sample photos to {assign_sample_photos(db)} criminals")
+    db.commit()
+
     # ── Criminal History ──────────────────────────────────────────────────────
     log.info("  Creating criminal histories...")
     event_types = ['arrest', 'conviction', 'release', 'bail_granted', 'wanted_notice', 'sighting', 'associate_link']
@@ -399,6 +405,8 @@ def seed_database(db: Session):
         # learned), so predictions on these cases use observed inputs.
         weapons, drugs, money, tech, night, *_ = CRIME_PROFILES[sc['crime_type']]
         incident_dt = incident_dt.replace(hour=22 if night >= 0.5 else 14, minute=random.randint(0, 59))
+        # Place, target and method: the crime's most typical option for each.
+        place, target, method = (max(weights, key=weights.get) for weights in DETAIL_PROFILES[sc['crime_type']])
         locality, city = sc['location']
         case = models.Case(
             case_number=case_number,
@@ -412,6 +420,9 @@ def seed_database(db: Session):
             drug_involvement=drugs >= 0.5,
             financial_motivation=money >= 0.5,
             tech_involvement=tech >= 0.5,
+            location_type=place,
+            target_type=target,
+            modus_operandi=method,
             incident_date=incident_dt,
             status=sc['status'],
             priority=sc['priority'],

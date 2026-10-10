@@ -2,7 +2,7 @@
 
 This runbook takes the AI from the bundled synthetic demo data to a model that can pass the release gate. Every step runs from `backend/`. Read [MODEL_CARD.md](MODEL_CARD.md) and [FEATURE_CONTRACT.md](../backend/app/ml/FEATURE_CONTRACT.md) first.
 
-> The bundled India demo dataset is **synthetic**: its patterns were designed in, so the models score well on it (about 50% crime accuracy against an 11% baseline, danger-score AUC 0.77), but that says nothing about real cases. Models trained on it can never be activated for real use. Real performance depends entirely on real data.
+> The bundled India demo dataset is **synthetic**: its patterns were designed in, so the models score well on it (about 83% crime accuracy and 98% top-3 accuracy against an 11% baseline, within about 2 points of the best any model can do on it; danger-score AUC 0.78), but that says nothing about real cases. Models trained on it can never be activated for real use. Real performance depends entirely on real data.
 
 ## 1. Define the task
 
@@ -25,7 +25,7 @@ Every closed or archived case with a verified offence category and an incident d
 Before you rely on it:
 
 - **Close cases with the final category.** Only `closed`/`archived` cases are used, and `Other`/`Unclassified` are skipped, so set `crime_type` to the verified outcome when closing.
-- **Record the Incident facts** (weapon, drugs, financial motive, technology) on every case. A feature that is never recorded carries no signal; the export warns about it.
+- **Record the Incident facts** (weapon, drugs, financial motive, technology) and the **type of place, target and modus operandi** on every case. On the demo data these three details lift crime-type accuracy from 54% to 83%. A feature that is never recorded carries no signal; the export warns about it.
 - **Link offenders with a role.** Features describe the case's `convicted` → `primary_offender` → `accused` → `accomplice` → `suspect` person, in that order; witnesses are never used.
 - **Danger score:** add a `reoffended_2y` column (1 = re-arrested within two years of the incident, from verified records) to train the learned danger score. The exporter cannot fill it in, because the system does not record outcomes yet, so without it the fixed-weight prototype score is used.
 - **Check `prior_convictions` for leakage.** It is the offender's *current* count, which can include the conviction for this very case. Where possible, reduce it to the count before the incident.
@@ -35,7 +35,7 @@ Before you rely on it:
 - Source: historical closed case files from this system or a partner agency, with written legal approval and a data-protection impact assessment.
 - Label (`crime_type`): the **final verified** outcome (charge-sheet or conviction category), never the first guess at FIR time. Values must come from `app.constants.CRIME_TYPES`. Map or merge local categories onto it.
 - Size: aim for **≥ 100 rows per category** (hundreds is better). Merge or drop rare categories; the gate fails any category the model never gets right.
-- Format: the 13 columns in [DATASET_SCHEMA.md](../backend/app/ml/data/DATASET_SCHEMA.md), then add:
+- Format: the 34 columns (or the 13 without case details) in [DATASET_SCHEMA.md](../backend/app/ml/data/DATASET_SCHEMA.md), then add:
   - `incident_date` (strongly recommended) to get an honest time-based holdout;
   - `slice_<name>` columns (e.g. `slice_district`, or legally permissible group attributes) for per-group error analysis. They are never model inputs.
 - Hygiene: remove duplicates, keep a record of where each row came from, and never edit the file after step 3.
@@ -67,13 +67,13 @@ AI_CRMS_DATASET_PATH=/secure/data/cases_v1.csv
 python -m app.ml.compare_models --output reports/compare_v1.json
 ```
 
-This compares the majority baseline, Random Forest (raw, sigmoid- and isotonic-calibrated) and gradient boosting, using only the **development** portion. The locked holdout (newest 20% of cases when dated) is excluded and judged once, by the gate, in step 6.
+This compares the majority baseline, the release logistic regression (raw, sigmoid- and isotonic-calibrated), Random Forest and gradient boosting, reporting accuracy, top-3 accuracy, macro-F1, balanced accuracy and calibration error, using only the **development** portion. The locked holdout (newest 20% of cases when dated) is excluded and judged once, by the gate, in step 6.
 
 Read the output:
 
 - If the best model does not clearly beat the baseline, or is far below the gate thresholds, **stop**. More or better features or data are needed; tuning won't fix that.
 - Set `AI_CRMS_CALIBRATION` to the suggested value (the lowest calibration error that doesn't cost macro-F1).
-- If gradient boosting wins by more than the fold standard deviation, switching `crime_estimator()` in `pipeline.py` is the follow-up change.
+- If another candidate wins by more than the fold standard deviation, switching `crime_estimator()` in `pipeline.py` is the follow-up change.
 
 ## 5. Check fairness and reliability
 
@@ -94,6 +94,6 @@ If the gate fails, do **not** retrain repeatedly against the same holdout until 
 ## 7. Monitor after launch
 
 - Track the confirm/override rate of reviews (AI Predictions page). Rising overrides mean the model has drifted.
-- Fill in the **Incident facts** on every case (weapon, drugs, financial motive, technology). Unrecorded facts are defaulted and flagged in each prediction's input-quality panel.
+- Fill in the **Incident facts** on every case (weapon, drugs, financial motive, technology, type of place, target, modus operandi). Unrecorded facts are defaulted and flagged in each prediction's input-quality panel.
 - Retrain on a schedule with a new dataset version (new manifest), and use **Roll back** if the new version does worse.
 - Never use model outputs or unreviewed predictions as training labels.

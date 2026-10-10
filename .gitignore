@@ -31,6 +31,8 @@ frontend/playwright-report/
 backups/
 backend/app/ml/saved_models/*
 !backend/app/ml/saved_models/.gitkeep
+# Uploaded offender photos and evidence files (content-addressed store).
+backend/uploads/
 
 # ── Agent / editor worktrees and caches ─────────────────────────────────────
 .kilo/

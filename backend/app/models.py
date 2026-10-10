@@ -124,6 +124,9 @@ class Criminal(Base):
     email = Column(String(100), nullable=True)
     occupation = Column(String(100), nullable=True)
     photo_url = Column(String(500), nullable=True)
+    # Uploaded photo in the content-addressed file store (app/utils/file_store.py).
+    photo_sha256 = Column(String(64), nullable=True)
+    photo_content_type = Column(String(50), nullable=True)
     fingerprint_id = Column(String(100), nullable=True)
 
     # Crime profile
@@ -193,6 +196,10 @@ class Case(Base):
     drug_involvement = Column(Boolean, nullable=True)
     financial_motivation = Column(Boolean, nullable=True)
     tech_involvement = Column(Boolean, nullable=True)
+    # Incident details from app.constants.CASE_DETAIL_FIELDS (keys); NULL = not recorded.
+    location_type = Column(String(32), nullable=True)
+    target_type = Column(String(32), nullable=True)
+    modus_operandi = Column(String(32), nullable=True)
 
     # FIR
     fir_number = Column(String(30), nullable=True)
@@ -249,6 +256,10 @@ class Evidence(Base):
     # SHA-256 of the referenced evidence file, recorded at collection time so
     # later copies can be verified against the original.
     file_sha256 = Column(String(64), nullable=True)
+    # Set when the file itself was uploaded into the file store (not just referenced).
+    file_content_type = Column(String(50), nullable=True)
+    file_name = Column(String(255), nullable=True)
+    file_size = Column(Integer, nullable=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

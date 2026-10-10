@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import secrets
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -13,6 +13,7 @@ from app.security import (
     require_officer_or_admin,
 )
 from app.utils.audit import create_audit_log, create_notification
+from app.utils import file_store
 from app.utils.pagination import MAX_PAGE_SIZE, apply_sort, like_term, paginate
 from app.utils.reports import generate_case_report, generate_case_excel
 
@@ -407,6 +408,78 @@ async def update_evidence(
     return evidence
 
 
+def _get_evidence(db: Session, case: models.Case, evidence_id: int) -> models.Evidence:
+    evidence = db.query(models.Evidence).filter(models.Evidence.id == evidence_id, models.Evidence.case_id == case.id).first()
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    return evidence
+
+
+def _safe_filename(name: Optional[str], content_type: str) -> str:
+    stem = "".join(c for c in (name or "").rsplit("/", 1)[-1].rsplit("\\", 1)[-1] if c.isalnum() or c in "._- ")
+    stem = stem.strip(" .")[:200] or "evidence"
+    extension = file_store.EXTENSIONS[content_type]
+    return stem if stem.lower().endswith(f".{extension}") else f"{stem}.{extension}"
+
+
+@router.post("/{case_id}/evidence/{evidence_id}/file", response_model=schemas.EvidenceOut)
+async def upload_evidence_file(
+    case_id: int, evidence_id: int,
+    file: UploadFile = File(..., description="JPEG, PNG, WebP, GIF or PDF, at most 20 MB"),
+    db: Session = Depends(get_db), current_user: models.User = Depends(require_officer_or_admin)
+):
+    """Attach the evidence file itself. Evidence files are write-once: a stored
+    file can never be replaced, and if a hash was recorded at collection time
+    the upload must match it."""
+    case = _get_case(db, case_id, current_user)
+    evidence = _get_evidence(db, case, evidence_id)
+    if evidence.file_content_type:
+        raise HTTPException(status_code=409, detail="This evidence item already has a stored file; files cannot be replaced")
+    sha256, content_type, size = await file_store.save_upload(
+        file, file_store.EVIDENCE_TYPES, file_store.MAX_EVIDENCE_BYTES)
+    if evidence.file_sha256 and evidence.file_sha256.lower() != sha256:
+        create_audit_log(db, "EVIDENCE_FILE_HASH_MISMATCH", actor=current_user, resource_type="evidence",
+                         resource_id=evidence.id, status="failure",
+                         details={"case_id": case.id, "recorded_sha256": evidence.file_sha256, "uploaded_sha256": sha256})
+        raise HTTPException(status_code=422, detail="This file does not match the SHA-256 recorded when the evidence was collected")
+    evidence.file_sha256 = sha256
+    evidence.file_content_type = content_type
+    evidence.file_name = _safe_filename(file.filename, content_type)
+    evidence.file_size = size
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    evidence.chain_of_custody = (f"{evidence.chain_of_custody or ''}\n[{stamp}] {current_user.full_name}: "
+                                 f"File {evidence.file_name} stored (SHA-256 {sha256[:12]}…)").strip()
+    create_audit_log(db, "EVIDENCE_FILE_UPLOADED", actor=current_user, resource_type="evidence", resource_id=evidence.id,
+                     details={"case_id": case.id, "sha256": sha256, "content_type": content_type, "size_bytes": size},
+                     commit=False)
+    db.commit()
+    db.refresh(evidence)
+    return evidence
+
+
+@router.get("/{case_id}/evidence/{evidence_id}/file")
+async def download_evidence_file(
+    case_id: int, evidence_id: int,
+    db: Session = Depends(get_db), current_user: models.User = Depends(require_any_role)
+):
+    case = _get_case(db, case_id, current_user)
+    evidence = _get_evidence(db, case, evidence_id)
+    if not evidence.file_content_type:
+        raise HTTPException(status_code=404, detail="No file is stored for this evidence item")
+    data = file_store.read_verified(evidence.file_sha256)
+    if data is None:
+        create_audit_log(db, "FILE_INTEGRITY_FAILURE", actor=current_user, resource_type="evidence", resource_id=evidence.id,
+                         status="failure", details={"case_id": case.id, "sha256": evidence.file_sha256, "kind": "evidence"})
+        raise HTTPException(status_code=409, detail="The stored evidence file is missing or fails its integrity check")
+    create_audit_log(db, "EVIDENCE_FILE_ACCESSED", actor=current_user, resource_type="evidence", resource_id=evidence.id,
+                     details={"case_id": case.id, "sha256": evidence.file_sha256})
+    return Response(content=data, media_type=evidence.file_content_type, headers={
+        "Content-Disposition": f'attachment; filename="{evidence.file_name}"',
+        "X-Content-SHA256": evidence.file_sha256,
+        "Cache-Control": "no-store",
+    })
+
+
 @router.post("/{case_id}/victims", response_model=schemas.VictimOut)
 async def add_victim(
     case_id: int,
@@ -427,34 +500,85 @@ async def add_victim(
     return victim
 
 
+def _include_ai(current_user: models.User) -> bool:
+    # AI output is decision support for officers/admins; clerical exports omit it.
+    return current_user.role.value in {"admin", "investigating_officer"}
+
+
+def _report_predictions(case: models.Case) -> list:
+    """AI assessments for this case, or else the latest one for each accused."""
+    predictions = list(case.ai_predictions)
+    if not predictions:
+        for link in case.criminals:
+            latest = max(link.criminal.ai_predictions, key=lambda p: (p.created_at is not None, p.created_at, p.id), default=None)
+            if latest:
+                predictions.append(latest)
+    rows = []
+    for p in sorted(predictions, key=lambda p: p.id):
+        subject = (f"{p.criminal.first_name} {p.criminal.last_name}" if p.criminal else case.case_number)
+        rows.append({
+            "subject": subject, "created_at": p.created_at,
+            "predicted_crime_type": p.predicted_crime_type, "crime_type_confidence": p.crime_type_confidence,
+            "risk_score": p.risk_score, "risk_level": p.risk_level,
+            "review_status": p.review_status.value if p.review_status else None,
+            "reviewed_by": p.reviewed_by_officer.full_name if p.reviewed_by_officer else None,
+            "reviewed_at": p.reviewed_at, "officer_remarks": p.officer_remarks,
+            "override_crime_type": p.override_crime_type,
+        })
+    return rows
+
+
 def _case_report_dict(case: models.Case, current_user: models.User) -> dict:
-    return {
+    data = {
         "case_number": case.case_number,
         "title": case.title,
+        "description": case.description,
         "status": case.status.value,
         "priority": case.priority,
         "crime_type": case.crime_type,
         "crime_category": case.crime_category,
         "location": case.location,
+        # Kept as text: the Excel export cannot store timezone-aware datetimes.
         "incident_date": str(case.incident_date) if case.incident_date else None,
+        "weapons_involved": case.weapons_involved,
+        "drug_involvement": case.drug_involvement,
+        "financial_motivation": case.financial_motivation,
+        "tech_involvement": case.tech_involvement,
+        "location_type": case.location_type,
+        "target_type": case.target_type,
+        "modus_operandi": case.modus_operandi,
         "fir_number": case.fir_number,
         "fir_date": str(case.fir_date) if case.fir_date else None,
+        "fir_station": case.fir_station,
+        "fir_filed_by": case.fir_filed_by,
+        "complainant_name": case.complainant_name,
+        "complainant_contact": case.complainant_contact,
+        "created_at": case.created_at,
+        "closed_at": case.closed_at,
         "officer_name": case.assigned_officer.full_name if case.assigned_officer else "Unassigned",
         "generated_by": f"{current_user.full_name} ({current_user.role.value})",
         "criminals": [
             {"criminal": {
                 "first_name": cc.criminal.first_name,
                 "last_name": cc.criminal.last_name,
+                "alias": cc.criminal.alias,
                 "crn": cc.criminal.crn,
                 "crime_type": cc.criminal.crime_type,
-                "risk_score": cc.criminal.risk_score
+                "risk_score": cc.criminal.risk_score,
+                "threat_level": cc.criminal.threat_level,
+                "is_wanted": cc.criminal.is_wanted,
+                "is_incarcerated": cc.criminal.is_incarcerated,
+                "gang_name": cc.criminal.gang.name if cc.criminal.gang else None,
+                "gang_rank": cc.criminal.gang_rank,
+                "photo_bytes": (file_store.read_verified(cc.criminal.photo_sha256)
+                                if cc.criminal.photo_sha256 else None),
             }, "role": cc.role}
             for cc in case.criminals
         ],
         "evidence": [
             {"evidence_number": e.evidence_number, "type": e.type,
              "description": e.description, "collected_by": e.collected_by,
-             "status": e.status}
+             "status": e.status, "file_sha256": e.file_sha256, "file_name": e.file_name}
             for e in case.evidence
         ],
         "victims": [
@@ -463,6 +587,9 @@ def _case_report_dict(case: models.Case, current_user: models.User) -> dict:
             for v in case.victims
         ]
     }
+    if _include_ai(current_user):
+        data["ai_predictions"] = _report_predictions(case)
+    return data
 
 
 def _download_name(case: models.Case, extension: str) -> str:

@@ -3,7 +3,7 @@
 ## Bundled dataset
 
 - File: `india_crime_training_v1.csv`
-- Version: `india-1.0`
+- Version: `india-2.0` (adds the case-detail columns; every other column is identical to `india-1.0`)
 - Type: **synthetic demonstration data** (models trained on it can never be activated for real use)
 - Rows: 6,000 incidents, dated 2018–2025
 - Generator: `generate_india_dataset.py`, seed `42`. The SHA-256 is pinned in `dataset_manifest.json`
@@ -15,6 +15,7 @@
 |---|---|
 | Crime mix | Follows the broad ordering of offence volumes in NCRB *Crime in India* reports: assault, vehicle theft and cheating are common; trafficking and money laundering are rare. Shares are indicative, not exact NCRB figures, and rare classes are raised to a 3% floor so the model sees enough examples. |
 | Crime patterns | Each crime type has a consistent profile: weapon, drugs, money motive, technology, time of day, typical age and number of associates. |
+| Case details | Type of place, target and modus operandi, as on an FIR. Each crime type has its own typical mix with overlaps (assault and murder are both mostly physical violence against a person), and 10% of entries are drawn at random to stand in for recording errors and unusual cases. Drawn from a separate random stream (seed 43). |
 | Gangs | Six **fictional** gangs (`app.constants.GANG_NAMES`). Each specialises in a few crime types and has its own habits, such as age, crew size and night activity. Home states are assigned arbitrarily, so no region is singled out. |
 | `reoffended_2y` | A **simulated** outcome (re-arrested within two years). It rises with prior convictions, gang membership, weapons, drugs, violence and offence severity, and falls with age. |
 | `slice_state` | Indian state, used only for per-state error analysis. It is never a model input. |
@@ -38,10 +39,16 @@ data can establish (see `docs/MODEL_TRAINING.md`).
 | `location_risk` | numeric | 0–1 | feature |
 | `time_of_crime` | numeric | 0–23 | feature |
 | `associates_count` | numeric | 0–1000 | feature |
+| `location_<key>` × 6 | binary | 0/1, one column per `app.constants.LOCATION_TYPES` key; blank in all six = not recorded | feature |
+| `target_<key>` × 6 | binary | 0/1, one per `TARGET_TYPES` key | feature |
+| `method_<key>` × 9 | binary | 0/1, one per `MODUS_OPERANDI` key | feature |
 | `crime_type` | categorical | 15 defined crime classes | target |
 | `gang_label` | categorical | 6 gangs + `None` | target |
 
-### Optional columns (after the 13 above, never model inputs)
+Datasets without the 21 case-detail columns (the 11 base features followed
+directly by the two targets) still load; their case details count as missing.
+
+### Optional columns (after the columns above, never model inputs)
 
 | Column | Type | Role |
 |---|---|---|

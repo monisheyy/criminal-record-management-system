@@ -7,14 +7,16 @@ import {
 } from 'lucide-react';
 import { aiAPI, casesAPI, criminalsAPI, getErrorMessage, saveBlob, usersAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import EvidenceFile from '../components/EvidenceFile';
 import NetworkGraph from '../components/NetworkGraph';
 import { PriorityBadge, StatusBadge } from '../components/RiskBadge';
 import { ConfirmDialog, EmptyState, ErrorState, FieldHint, LoadingState, Modal } from '../components/ui';
 import {
-  CASE_INCIDENT_FACTS, CASE_ROLES, CASE_STATUSES, CASE_STATUS_TRANSITIONS, EVIDENCE_STATUSES, EVIDENCE_TYPES, GENDERS, VICTIM_STATUSES,
+  CASE_INCIDENT_DETAILS, CASE_INCIDENT_FACTS, CASE_ROLES, CASE_STATUSES, CASE_STATUS_TRANSITIONS, EVIDENCE_STATUSES, EVIDENCE_TYPES, GENDERS, VICTIM_STATUSES,
 } from '../utils/constants';
 import { formatDate, localInputToIso, nowLocalInputValue } from '../utils/format';
 import { humanize } from '../utils/errors';
+import { useApiQuery } from '../utils/useApiQuery';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: FileText },
@@ -60,21 +62,23 @@ function FormModal({ title, onClose, onSubmit, submitLabel, children, maxWidth }
 
 function LinkCriminalModal({ caseId, linkedIds, onClose, onDone }) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
+  // Search results are tagged with the term they answer, so a cleared or changed search never shows stale rows.
+  const [found, setFound] = useState({ term: '', rows: [] });
   const [selected, setSelected] = useState(null);
   const [role, setRole] = useState('suspect');
+  const term = query.trim();
 
   useEffect(() => {
-    const term = query.trim();
-    if (term.length < 2) { setResults([]); return undefined; }
+    if (term.length < 2) return undefined;
     let cancelled = false;
     const timer = setTimeout(() => {
       criminalsAPI.list({ search: term, limit: 10 })
-        .then((res) => { if (!cancelled) setResults((res.data || []).filter((c) => !linkedIds.includes(c.id))); })
-        .catch(() => { if (!cancelled) setResults([]); });
+        .then((res) => { if (!cancelled) setFound({ term, rows: res.data || [] }); })
+        .catch(() => { if (!cancelled) setFound({ term, rows: [] }); });
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [query, linkedIds]);
+  }, [term]);
+  const results = term.length >= 2 && found.term === term ? found.rows.filter((c) => !linkedIds.includes(c.id)) : [];
 
   return (
     <FormModal title="Link a person to this case" onClose={onClose} submitLabel="Link record"
@@ -271,23 +275,12 @@ export default function CaseDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, isAdmin, isOfficer } = useAuth();
-  const [caseFile, setCaseFile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [tab, setTab] = useState('overview');
   const [dialog, setDialog] = useState(null);
   const [downloading, setDownloading] = useState('');
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError('');
-    casesAPI.get(id)
-      .then((res) => setCaseFile(res.data))
-      .catch((err) => setError(getErrorMessage(err, 'Failed to load the case.')))
-      .finally(() => setLoading(false));
-  }, [id]);
-
-  useEffect(() => { load(); }, [load]);
+  const fetchCase = useCallback(() => casesAPI.get(id), [id]);
+  const { data: caseFile, loading, error, reload: load } = useApiQuery(fetchCase, { fallbackError: 'Failed to load the case.' });
 
   const done = () => { setDialog(null); load(); };
 
@@ -407,6 +400,9 @@ export default function CaseDetails() {
               {CASE_INCIDENT_FACTS.map((f) => (
                 <div key={f.key}><dt>{f.label}</dt><dd>{caseFile[f.key] == null ? 'Not recorded' : caseFile[f.key] ? 'Yes' : 'No'}</dd></div>
               ))}
+              {CASE_INCIDENT_DETAILS.map((d) => (
+                <div key={d.key}><dt>{d.label}</dt><dd>{d.options.find((o) => o.value === caseFile[d.key])?.label || 'Not recorded'}</dd></div>
+              ))}
               <div><dt>Opened</dt><dd>{formatDate(caseFile.created_at, { withTime: true })}</dd></div>
               <div><dt>Closed</dt><dd>{formatDate(caseFile.closed_at, { withTime: true })}</dd></div>
             </dl>
@@ -470,7 +466,7 @@ export default function CaseDetails() {
             </div>
             {caseFile.evidence.length === 0 ? <EmptyState icon={Paperclip} title="No evidence logged" /> : (
               <div className="table-scroll"><table>
-                <thead><tr><th scope="col">Number</th><th scope="col">Type</th><th scope="col">Description</th><th scope="col">Found at</th><th scope="col">Status</th><th scope="col">Custody log</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+                <thead><tr><th scope="col">Number</th><th scope="col">Type</th><th scope="col">Description</th><th scope="col">Found at</th><th scope="col">Status</th><th scope="col">File</th><th scope="col">Custody log</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
                 <tbody>{caseFile.evidence.map((ev) => (
                   <tr key={ev.id}>
                     <td className="td-mono">{ev.evidence_number}{ev.file_sha256 && <div className="td-sub" title={ev.file_sha256}>SHA-256 {ev.file_sha256.slice(0, 10)}…</div>}</td>
@@ -478,6 +474,7 @@ export default function CaseDetails() {
                     <td className="td-primary">{ev.description}</td>
                     <td>{ev.location_found || '—'}</td>
                     <td><span className="badge badge-green">{labelFor(EVIDENCE_STATUSES, ev.status)}</span></td>
+                    <td><EvidenceFile caseId={id} evidence={ev} canWrite={canWrite} onUploaded={done} /></td>
                     <td>
                       <details>
                         <summary className="td-sub">{(ev.chain_of_custody || '').split('\n').filter(Boolean).length} entries</summary>

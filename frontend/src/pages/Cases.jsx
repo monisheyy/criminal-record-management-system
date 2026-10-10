@@ -5,7 +5,7 @@ import { ChevronRight, FileText, Plus, Search } from 'lucide-react';
 import { casesAPI, getErrorMessage, usersAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getFieldErrors } from '../utils/errors';
-import { CASE_CRIME_TYPES, CASE_INCIDENT_FACTS, CASE_PRIORITIES, CASE_STATUSES } from '../utils/constants';
+import { CASE_CRIME_TYPES, CASE_INCIDENT_DETAILS, CASE_INCIDENT_FACTS, CASE_PRIORITIES, CASE_STATUSES } from '../utils/constants';
 import { formatDate, localInputToIso, nowLocalInputValue } from '../utils/format';
 import { usePagedList } from '../utils/usePagedList';
 import { EmptyState, ErrorState, FieldError, FieldHint, LoadingState, Modal, Pagination } from '../components/ui';
@@ -15,6 +15,7 @@ const EMPTY_FORM = {
   title: '', description: '', crime_type: '', location: '', incident_date: '', priority: 'normal',
   fir_number: '', fir_station: '', complainant_name: '', complainant_contact: '', assigned_officer_id: '',
   ...Object.fromEntries(CASE_INCIDENT_FACTS.map((f) => [f.key, ''])),
+  ...Object.fromEntries(CASE_INCIDENT_DETAILS.map((d) => [d.key, ''])),
 };
 
 // '' = not recorded (omitted from the payload), so "unknown" is never stored as "no".
@@ -130,6 +131,16 @@ function CreateCaseModal({ onClose, onCreated }) {
                     <option value="no">No</option>
                   </select>
                   <FieldError>{fieldErrors[f.key]}</FieldError>
+                </div>
+              ))}
+              {CASE_INCIDENT_DETAILS.map((d) => (
+                <div className="form-group" key={d.key}>
+                  <label className="form-label" htmlFor={`case-${d.key}`}>{d.label}</label>
+                  <select id={`case-${d.key}`} className="form-select" value={form[d.key]} onChange={set(d.key)}>
+                    <option value="">Not recorded</option>
+                    {d.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <FieldError>{fieldErrors[d.key]}</FieldError>
                 </div>
               ))}
             </div>
