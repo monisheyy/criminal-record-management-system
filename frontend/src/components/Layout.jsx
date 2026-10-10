@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, Bell, BookOpen, Brain, CheckCheck, Database, FileText, KeyRound, LayoutDashboard,
-  Lock, LogOut, Shield, Siren, Users,
+  Lock, LogOut, MapPinned, Shield, Siren, Users,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import monogram from '../assets/brand/crms-monogram.svg';
 import { notificationsAPI } from '../services/api';
 import { formatDate } from '../utils/format';
 import { ROLE_LABELS } from '../utils/constants';
@@ -17,6 +18,7 @@ const NAV = [
   { section: 'Records', links: [
     { to: '/criminals', icon: Shield, label: 'Offender Directory', roles: ALL },
     { to: '/cases', icon: FileText, label: 'Cases & FIR Files', roles: ALL },
+    { to: '/map', icon: MapPinned, label: 'Incident Map', roles: ALL },
   ] },
   { section: 'Decision Support', links: [
     { to: '/ai-predictions', icon: Brain, label: 'AI Predictions (review)', roles: ['admin', 'investigating_officer'] },
@@ -73,6 +75,13 @@ function NotificationPanel({ notifications, onMarkRead, onMarkAllRead, onOpen })
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // The sidebar is a slim icon rail that opens over the page on hover or keyboard focus.
+  // `navOpen` is the tap/click toggle on the emblem, for touch screens that have no hover.
+  const [navOpen, setNavOpen] = useState(false);
+  const navRef = useRef(null);
+  const [navPath, setNavPath] = useState(location.pathname);
+  if (navPath !== location.pathname) { setNavPath(location.pathname); setNavOpen(false); }
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -135,6 +144,15 @@ export default function Layout({ children }) {
   }, []);
 
   useEffect(() => {
+    if (!navOpen) return undefined;
+    const onPointer = (e) => { if (navRef.current && !navRef.current.contains(e.target)) setNavOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setNavOpen(false); };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); };
+  }, [navOpen]);
+
+  useEffect(() => {
     const onPointer = (e) => { if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifs(false); };
     const onKey = (e) => { if (e.key === 'Escape') setShowNotifs(false); };
     document.addEventListener('mousedown', onPointer);
@@ -171,14 +189,15 @@ export default function Layout({ children }) {
     <div className="app-layout">
       <a className="skip-link" href="#main-content">Skip to main content</a>
 
-      <nav className="sidebar" aria-label="Main navigation">
-        <div className="sidebar-brand">
-          <div className="sidebar-brand-icon" aria-hidden="true"><Shield size={15} /></div>
-          <div>
-            <div className="sidebar-brand-title">AI-CRMS</div>
-            <div className="sidebar-brand-sub">Records Platform</div>
-          </div>
-        </div>
+      <nav ref={navRef} className={`sidebar ${navOpen ? 'is-open' : ''}`} aria-label="Main navigation">
+        <button type="button" className="sidebar-brand" onClick={() => setNavOpen((o) => !o)}
+          aria-expanded={navOpen} aria-label={navOpen ? 'Collapse menu' : 'Expand menu'}>
+          <img className="brand-mark" src={monogram} alt="" aria-hidden="true" width="32" height="32" />
+          <span className="sidebar-brand-text" aria-hidden="true">
+            <span className="sidebar-brand-title">AI-CRMS</span>
+            <span className="sidebar-brand-sub">Records Platform</span>
+          </span>
+        </button>
 
         <div className="sidebar-classification-banner">
           <Lock size={11} aria-hidden="true" style={{ flexShrink: 0, opacity: 0.7 }} />
@@ -196,7 +215,7 @@ export default function Layout({ children }) {
                   <NavLink key={link.to} to={link.to} title={link.label}
                     className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
                     <link.icon className="sidebar-link-icon" aria-hidden="true" />
-                    <span>{link.label}</span>
+                    <span className="sidebar-link-label">{link.label}</span>
                     {link.to === '/alerts' && unreadCount > 0 && (
                       <span className="sidebar-badge" aria-label={`${unreadCount} unread`}>{unreadCount}</span>
                     )}

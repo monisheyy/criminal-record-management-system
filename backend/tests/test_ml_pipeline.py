@@ -1,3 +1,4 @@
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -66,7 +67,7 @@ def test_dataset_rejects_unknown_target_class(tmp_path: Path):
     source = DATASET_PATH.read_text(encoding="utf-8")
     lines = source.splitlines()
     cells = lines[1].split(",")
-    cells[12] = "UnknownGang"  # gang_label column
+    cells[len(FEATURE_COLUMNS) + 1] = "UnknownGang"  # gang_label column
     lines[1] = ",".join(cells)
     invalid = tmp_path / "invalid.csv"
     invalid.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -151,7 +152,7 @@ def test_evaluation_contains_per_class_and_distribution():
         assert len(evaluation["confusion_matrix"]) == len(evaluation["classes"])
 
 
-def test_prediction_explanation_matches_random_forest_importances(tmp_path):
+def test_prediction_explanation_matches_permutation_importances(tmp_path):
     from app.ml.pipeline import CRMSMLPipeline, FEATURE_COLUMNS
 
     pipeline = CRMSMLPipeline()
@@ -169,12 +170,14 @@ def test_prediction_explanation_matches_random_forest_importances(tmp_path):
     }
     result = pipeline.predict(data)
     explanation = result["input_features"]["explanation"]
-    expected = dict(zip(FEATURE_COLUMNS, pipeline.crime_classifier.feature_importances_))
-    assert explanation["method"] == "global_random_forest_feature_importance"
+    stored = pipeline.training_metadata["feature_importances"]
+    total = sum(stored.values())
+    assert total > 0
+    assert explanation["method"] == "global_permutation_importance"
     assert explanation["model_version"] == pipeline.model_version
     assert len(explanation["all_features"]) == len(FEATURE_COLUMNS)
     for row in explanation["all_features"]:
-        assert row["relative_importance"] == round(float(expected[row["feature"]]), 6)
+        assert row["relative_importance"] == round(stored[row["feature"]] / total, 6)
     assert explanation["top_features"] == sorted(
         explanation["all_features"],
         key=lambda item: (-item["relative_importance"], item["feature"]),
@@ -270,7 +273,39 @@ def test_explicit_observed_features_are_used():
         "associates_count": 7,
     })
     assert features[2:7] == [1.0, 1.0, 1.0, 0.0, 1.0]
-    assert features[7:] == [3.0, 0.8, 22.0, 7.0]
+    assert features[7:11] == [3.0, 0.8, 22.0, 7.0]
+
+
+def test_case_details_are_one_hot_inputs_and_unrecorded_details_are_missing():
+    from app.ml.pipeline import CASE_DETAIL_COLUMNS
+
+    columns = {name: i for i, name in enumerate(FEATURE_COLUMNS)}
+    features = CRMSMLPipeline._extract_features(
+        {"location_type": "Online", "target_type": "data"}, impute_missing=True)
+    assert [features[columns[name]] for name in CASE_DETAIL_COLUMNS["location_type"]] == [0, 0, 0, 0, 0, 1]
+    assert features[columns["target_data"]] == 1.0 and features[columns["target_money"]] == 0.0
+    assert all(np.isnan(features[columns[name]]) for name in CASE_DETAIL_COLUMNS["modus_operandi"])
+    quality = CRMSMLPipeline._feature_input_quality({"location_type": "online"})
+    assert set(CASE_DETAIL_COLUMNS["location_type"]) <= set(quality["observed_features"])
+    assert "method_deception" in quality["defaulted_features"]
+    with pytest.raises(ValueError, match="modus_operandi must be one of"):
+        CRMSMLPipeline._extract_features({"modus_operandi": "telepathy"})
+
+
+def test_dataset_without_case_detail_columns_still_loads(tmp_path: Path):
+    from app.ml.pipeline import BASE_FEATURE_COLUMNS, TARGET_COLUMNS
+
+    with DATASET_PATH.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))[:200]
+    older = tmp_path / "older.csv"
+    with older.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=BASE_FEATURE_COLUMNS + TARGET_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    X, _, _, meta = load_training_dataset(older)
+    assert X.shape == (200, len(FEATURE_COLUMNS))
+    assert np.isnan(X[:, FEATURE_COLUMNS.index("method_deception")]).all()
+    assert meta["missing_counts"]["method_deception"] == 200
 
 
 def test_candidate_save_does_not_overwrite_active_artifacts(tmp_path, monkeypatch):
@@ -400,3 +435,26 @@ def test_candidate_activation_rejects_legacy_or_incompatible_feature_schema(tmp_
     finally:
         import shutil
         shutil.rmtree(candidate_dir, ignore_errors=True)
+
+
+def test_crime_prediction_returns_ranked_top_suggestions():
+    from app.ml.pipeline import CRMSMLPipeline, TOP_K_SUGGESTIONS
+
+    pipeline = CRMSMLPipeline()
+    metrics = pipeline.train(save=False)
+    assert metrics["crime_classifier"][f"top_{TOP_K_SUGGESTIONS}_accuracy"] >= metrics["crime_classifier"]["accuracy"]
+    result = pipeline.predict({"prior_convictions": 1, "violence_history": 0, "time_of_crime": 23})
+    candidates = result["crime_type_candidates"]
+    assert len(candidates) == TOP_K_SUGGESTIONS
+    assert candidates[0]["crime_type"] == result["predicted_crime_type"]
+    assert [c["score"] for c in candidates] == sorted((c["score"] for c in candidates), reverse=True)
+    assert result["input_features"]["crime_type_candidates"] == candidates
+
+
+def test_derived_features_treat_late_evening_and_early_morning_as_night():
+    from app.ml.pipeline import add_derived_features
+
+    hours = np.array([[0.0, 3], [4, 0], [5, 1], [12, 2], [19, 0], [20, 5], [23, 0]])
+    derived = add_derived_features(hours, hour_index=0, associates_index=1)
+    assert derived[:, 2].tolist() == [1, 1, 0, 0, 0, 1, 1]
+    assert np.allclose(derived[:, 3], np.log1p(hours[:, 1]))

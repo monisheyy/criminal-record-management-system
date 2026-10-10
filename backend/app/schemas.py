@@ -15,6 +15,7 @@ from pydantic import (
 )
 
 from app.constants import (
+    CASE_DETAIL_FIELDS,
     CASE_CRIME_TYPES, CASE_ROLES, CRIME_TYPES, EVIDENCE_TYPES, GENDERS, HISTORY_EVENT_TYPES,
 )
 
@@ -359,6 +360,8 @@ class CriminalOut(CriminalBase):
     created_at: datetime
     updated_at: Optional[datetime]
     gang: Optional[GangOut] = None
+    # Set when a photo has been uploaded; served by GET /api/criminals/{id}/photo.
+    photo_sha256: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -383,6 +386,9 @@ class CaseBase(BaseModel):
     drug_involvement: Optional[bool] = None
     financial_motivation: Optional[bool] = None
     tech_involvement: Optional[bool] = None
+    location_type: Optional[str] = None
+    target_type: Optional[str] = None
+    modus_operandi: Optional[str] = None
     fir_number: Optional[str] = None
     fir_date: Optional[datetime] = None
     fir_filed_by: Optional[str] = None
@@ -404,6 +410,9 @@ class _CaseWriteFields(BaseModel):
     drug_involvement: Optional[StrictBool] = None
     financial_motivation: Optional[StrictBool] = None
     tech_involvement: Optional[StrictBool] = None
+    location_type: Optional[str] = None
+    target_type: Optional[str] = None
+    modus_operandi: Optional[str] = None
     fir_number: Optional[Str(30, 3, r"^[A-Za-z0-9/\-_.]{3,30}$")] = None
     fir_date: Optional[datetime] = None
     fir_filed_by: Optional[Str(100)] = None
@@ -416,6 +425,11 @@ class _CaseWriteFields(BaseModel):
     @classmethod
     def _crime_type(cls, value):
         return _in_vocabulary(value, CASE_CRIME_TYPES, "crime_type")
+
+    @field_validator("location_type", "target_type", "modus_operandi")
+    @classmethod
+    def _case_detail(cls, value, info):
+        return _in_vocabulary(value, list(CASE_DETAIL_FIELDS[info.field_name][0]), info.field_name)
 
     @field_validator("incident_date", "fir_date")
     @classmethod
@@ -498,6 +512,10 @@ class EvidenceOut(BaseModel):
     chain_of_custody: Optional[str]
     file_url: Optional[str]
     file_sha256: Optional[str] = None
+    # Set when the file itself is held in the system's file store.
+    file_content_type: Optional[str] = None
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -852,6 +870,33 @@ class NetworkGraphOut(BaseModel):
     nodes: List[NetworkNode]
     edges: List[NetworkEdge]
     metadata: NetworkMetadata
+
+
+class IncidentPoint(BaseModel):
+    case_id: int
+    case_number: str
+    title: str
+    crime_type: Optional[str] = None
+    crime_category: Optional[str] = None
+    status: str
+    priority: Optional[str] = None
+    location: str
+    city: str
+    precision: str
+    lat: float
+    lng: float
+    incident_date: Optional[datetime] = None
+
+
+class CityCount(BaseModel):
+    city: str
+    count: int
+
+
+class IncidentMapOut(BaseModel):
+    incidents: List[IncidentPoint]
+    by_city: List[CityCount]
+    unmapped: int
 
 
 # ── Password recovery schemas ────────────────────────────────────────────────

@@ -6,10 +6,10 @@
 
 | | |
 |---|---|
-| Models | Random Forest crime-category classifier (15 classes); Random Forest gang-affiliation classifier (6 fictional gangs + none); logistic-regression danger score (P(re-arrest within 2 years)) |
-| Pipeline version | 2.0 (`backend/app/ml/pipeline.py`) |
+| Models | Logistic-regression crime-category classifier (15 classes); logistic-regression gang-affiliation classifier (6 fictional gangs + none); logistic-regression danger score (P(re-arrest within 2 years)). Inputs: 11 person/incident features plus the case's type of place, target and modus operandi (one-hot, 21 columns). The crime and gang models add two derived inputs: a night-time flag (20:00–04:59) and log(1 + associates) |
+| Pipeline version | 4.0 (`backend/app/ml/pipeline.py`) |
 | Training data | `backend/app/ml/data/india_crime_training_v1.csv`, synthetic, SHA-256 pinned in `dataset_manifest.json` |
-| Outputs | Suggested crime category + score; suggested gang + association score; danger score 1–100 = 1 + 99 × P(re-arrest within 2 years), with an exact per-factor breakdown (falls back to the fixed-weight prototype score when the dataset has no `reoffended_2y` outcome) |
+| Outputs | Suggested crime category + score, plus the top 3 categories ranked; suggested gang + association score; danger score 1–100 = 1 + 99 × P(re-arrest within 2 years), with an exact per-factor breakdown (falls back to the fixed-weight prototype score when the dataset has no `reoffended_2y` outcome) |
 | Owner | System administrator(s) operating the Model Governance screen |
 
 ## Intended use
@@ -26,17 +26,28 @@ Computed at every training run and stored with the candidate (visible in Model G
 
 * Holdout: when the dataset has an `incident_date` column, the newest 20% of cases (train on the past, test on the future) with forward-chaining time-series cross-validation; otherwise a stratified 80/20 split + 5-fold stratified cross-validation, fixed seed.
 * Model/calibration selection (`python -m app.ml.compare_models`) uses only the development portion, never the holdout.
-* Accuracy, balanced accuracy, macro and weighted precision/recall/F1, per-class metrics, confusion matrix, majority-class baseline, zero-recall classes.
+* Accuracy, top-3 accuracy (crime: is the right category among the three suggestions shown), balanced accuracy, macro and weighted precision/recall/F1, per-class metrics, confusion matrix, majority-class baseline, zero-recall classes.
 * **Calibration:** expected calibration error (10 bins), Brier score, reliability table. Optional sigmoid/isotonic calibration (`AI_CRMS_CALIBRATION`) is fitted on training data only; the gate measures the calibrated model. Displayed "confidence" values are still not validated real-world probabilities.
 * **Slices:** age band, gang membership, location-risk band, time of day, plus any `slice_*` group columns in the dataset (e.g. district) — with sample sizes; slices under 10 samples are not scored.
 
 ### Results on the bundled synthetic data (time-based holdout: newest 1,200 incidents)
 
-| Model | Result | Baseline |
-|---|---|---|
-| Crime type | 50% accuracy, all 15 classes recognised | 11% (always guess the most common) |
-| Gang | 64% balanced accuracy; per-gang recall 40–73% | 14% (chance across 7 classes) |
-| Danger score | AUC 0.77, expected calibration error 0.01; observed re-arrest 23% / 45% / 68% / 86% in low / medium / high / critical | 43% base rate |
+| Model | Pipeline 4.0 (dataset india-2.0) | Pipeline 3.0 (india-1.0) | Best possible on india-2.0 | Baseline |
+|---|---|---|---|---|
+| Crime type, accuracy | **83.2%** | 54.3% | 85.4% | 11% (always guess the most common) |
+| Crime type, top-3 accuracy | **98.0%** | 85.8% | 98.1% | 24% |
+| Crime type, macro-F1 / balanced accuracy / ECE | 0.81 / 0.81 / 0.03 | 0.50 / 0.50 / 0.02 | | |
+| Gang, accuracy | **84.3%** | 81.5% | 85.7% | 71.8% (always "None") |
+| Gang, balanced accuracy | 63% (per-gang recall 32–79%) | 52% | | 14% (chance across 7 classes) |
+| Danger score | AUC 0.777, ECE 0.02; observed re-arrest 22% / 46% / 67% / 89% in low / medium / high / critical | AUC 0.774 | AUC 0.78 | 43% base rate |
+
+**Where the gain comes from.** Version india-2.0 of the synthetic data adds three case details an officer records on an FIR: the type of place, the target and the modus operandi. The generator gives each crime type its own mix of them, with overlaps (an assault and a murder are both mostly physical violence against a person) and 10% of entries drawn at random, standing in for recording errors and unusual cases. Every other column is byte-for-byte the same as india-1.0, so the jump from 54% to 83% is entirely the value of recording these details *as the generator models them*. How much they help on real cases can only be measured on real cases.
+
+"Best possible" is the Bayes-optimal score: the generator draws every row at random from overlapping profiles, so some rows look identical but carry different labels, and no model can beat that limit on average (`python -m app.ml.data.accuracy_ceiling` computes it from the generator's exact probabilities). The model is within 2.2 points of it on crime type. The hardest crimes are Murder (53% recall, mostly confused with Assault) and Money Laundering (63%, confused with Fraud).
+
+Trade-off: the 2.0 gang forest weighted gangs equally, which raised balanced accuracy but made it *less* accurate than always answering "None". The logistic model is the most accurate, but it answers "None" for borderline cases, so it finds fewer members of the gangs whose crimes overlap with non-gang offenders (Lal Toofan 32%, Kaali Billi 44% recall).
+
+The model was chosen on development folds only (`compare_models` on india-2.0: logistic regression 80.7% ± 3.2 accuracy and 97.2% top-3, vs Random Forest 78.5% and 96.3%, gradient boosting 78.4% and 95.8%); the holdout above was scored once. On india-2.0 the candidate also passes the quality gate, but it still cannot be activated because the data is synthetic. The night window matches how the synthetic generator defines night; re-check it on real data.
 
 These numbers show that the models learn the patterns *designed into* the synthetic data. They are not evidence of real-world accuracy.
 
@@ -48,7 +59,7 @@ A candidate can be activated only if it is not trained on synthetic data **and**
 
 * Synthetic data encodes the designer's assumptions; metrics on it say nothing about real performance.
 * No protected attributes exist in the data, so fairness across protected groups is **unmeasured**. Historical police data typically reflects enforcement patterns, not underlying offending — a real dataset would risk reproducing those biases.
-* Global feature importance is not a causal or individual explanation.
+* Global feature importance (permutation importance on the holdout) is not a causal or individual explanation.
 * Missing inputs fall back to defaults; outputs list which features were defaulted, and such outputs are especially unreliable.
 * The danger score is learned from a *simulated* outcome. Real use would need a real, lawfully obtained outcome (e.g. re-arrest records) and a fairness review; the score must never decide bail, custody or charging.
 * Without a `reoffended_2y` column, the fallback prototype score uses hand-chosen weights that have not been validated against any outcome.

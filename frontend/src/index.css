@@ -930,12 +930,7 @@ tbody tr:last-child td {
 
 /* Responsive Adaptations */
 @media (max-width: 900px) {
-  .sidebar { width: 60px; }
-  .sidebar-brand-title, .sidebar-brand-sub, .sidebar-group-title, .sidebar-link span, .sidebar-user-info, .sidebar-badge { display: none; }
-  .sidebar-brand { justify-content: center; padding: 0; }
-  .sidebar-link { justify-content: center; padding: 10px; }
-  .main-content { margin-left: 60px; padding: 20px; }
-  .header { left: 60px; }
+  .main-content { padding: 20px; }
 }
 
 /* ── Accessibility utilities ─────────────────────────────────────────────── */
@@ -1039,14 +1034,11 @@ tbody tr:last-child td {
 
 /* ── Tablet & phone layouts ──────────────────────────────────────────────── */
 @media (max-width: 900px) {
-  .sidebar-action-label { display: none; }
-  .sidebar-footer .btn { padding: 6px; }
   .dashboard-split { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
-  .sidebar { width: 52px; }
-  .main-content { margin-left: 52px; padding: 14px; }
-  .header { left: 52px; padding: 0 12px; }
+  .main-content { padding: 14px; }
+  .header { padding: 0 12px; }
   .user-pill { display: none; }
   .page-header { flex-direction: column; align-items: stretch; gap: 12px; }
   .header-actions { justify-content: flex-start; }

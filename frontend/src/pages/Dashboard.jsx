@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -12,13 +12,16 @@ import {
 import { adminAPI, getErrorMessage, saveBlob } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { ErrorState, LoadingState } from '../components/ui';
+import { useApiQuery } from '../utils/useApiQuery';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, LineElement, PointElement, Filler, Tooltip, Legend);
 
-const ACCENT = '#0071E3';
-const QUIET = '#D2D2D7';
-const STATUS_COLORS = { open: '#0071E3', under_investigation: '#FF9F0A', closed: '#34C759', archived: '#C7C7CC' };
-const FONT = { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', size: 12 };
+// Brand palette: navy + gold, matching the CR seal.
+const ACCENT = '#14213D';
+const GOLD = '#C29435';
+const QUIET = '#E2DCCD';
+const STATUS_COLORS = { open: '#2A4170', under_investigation: '#C29435', closed: '#5E8C6A', archived: '#C9C3B5' };
+const FONT = { family: '"Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif', size: 12 };
 
 const baseOptions = {
   responsive: true,
@@ -26,13 +29,13 @@ const baseOptions = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: 'rgba(29,29,31,0.92)', titleFont: { ...FONT, weight: '600' }, bodyFont: FONT,
+      backgroundColor: 'rgba(14,22,40,0.95)', titleColor: '#E8CD87', borderColor: 'rgba(217,180,90,0.4)', borderWidth: 1, titleFont: { ...FONT, weight: '600' }, bodyFont: FONT,
       padding: 10, cornerRadius: 10, displayColors: false,
     },
   },
   scales: {
-    x: { ticks: { color: '#86868B', font: FONT }, grid: { display: false }, border: { display: false } },
-    y: { ticks: { color: '#86868B', font: FONT, precision: 0 }, grid: { color: '#F0F0F2' }, border: { display: false } },
+    x: { ticks: { color: '#7D8497', font: FONT }, grid: { display: false }, border: { display: false } },
+    y: { ticks: { color: '#7D8497', font: FONT, precision: 0 }, grid: { color: 'rgba(20,33,61,0.06)' }, border: { display: false } },
   },
 };
 
@@ -41,11 +44,11 @@ function greeting(now = new Date()) {
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 
-function StatCard({ icon: Icon, value, label, subtext, onClick }) {
+function StatCard({ icon: Icon, value, label, subtext, onClick, alert = false }) {
   const clickable = Boolean(onClick);
   const Tag = clickable ? 'button' : 'div';
   return (
-    <Tag type={clickable ? 'button' : undefined} className="stat-card" onClick={onClick}
+    <Tag type={clickable ? 'button' : undefined} className={`stat-card${alert ? ' is-alert' : ''}`} onClick={onClick}
       style={{ cursor: clickable ? 'pointer' : 'default', textAlign: 'left', font: 'inherit', width: '100%' }}>
       <div className="stat-card-header">
         <span className="stat-label">{label}</span>
@@ -60,20 +63,11 @@ function StatCard({ icon: Icon, value, label, subtext, onClick }) {
 export default function Dashboard() {
   const { user, isAdmin, isOfficer, isClerk } = useAuth();
   const navigate = useNavigate();
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const load = () => {
-    setLoading(true);
-    setError('');
-    adminAPI.dashboard()
-      .then((r) => setStats(r.data))
-      .catch((err) => setError(getErrorMessage(err, 'Failed to load dashboard statistics.')))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => { load(); }, []);
+  const { data: stats, loading, error, reload: load } = useApiQuery(adminAPI.dashboard, {
+    fallbackError: 'Failed to load dashboard statistics.',
+  });
+  // Read the clock once per visit, not on every render.
+  const [today] = useState(() => new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
 
   const exportAnalytics = async (format) => {
     try {
@@ -85,7 +79,7 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) return <LoadingState label="Loading dashboard…" minHeight="50vh" />;
+  if (loading && !stats) return <LoadingState label="Loading dashboard…" minHeight="50vh" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   const crimeEntries = Object.entries(stats?.crimes_by_type || {}).sort(([, a], [, b]) => b - a).slice(0, 8);
@@ -95,26 +89,25 @@ export default function Dashboard() {
   const totalCases = statusEntries.reduce((sum, [, v]) => sum + v, 0);
   const agreement = stats?.reviewed_predictions ? stats.reviewer_agreement_rate : null;
   const firstName = user?.full_name?.split(' ')[0] || user?.username;
-  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   const lineData = {
     labels: monthly.map((m) => m.month),
     datasets: [{
       label: 'Cases filed',
       data: monthly.map((m) => m.cases),
-      borderColor: ACCENT,
-      borderWidth: 2,
+      borderColor: GOLD,
+      borderWidth: 2.5,
       tension: 0.35,
       fill: true,
       backgroundColor: (ctx) => {
         const { chart } = ctx;
-        if (!chart.chartArea) return 'rgba(0,113,227,0.08)';
+        if (!chart.chartArea) return 'rgba(194,148,53,0.12)';
         const g = chart.ctx.createLinearGradient(0, chart.chartArea.top, 0, chart.chartArea.bottom);
-        g.addColorStop(0, 'rgba(0,113,227,0.14)');
-        g.addColorStop(1, 'rgba(0,113,227,0)');
+        g.addColorStop(0, 'rgba(194,148,53,0.28)');
+        g.addColorStop(1, 'rgba(20,33,61,0)');
         return g;
       },
-      pointRadius: 0, pointHoverRadius: 5, pointBackgroundColor: ACCENT, pointBorderColor: '#fff', pointBorderWidth: 2,
+      pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: ACCENT, pointBorderColor: GOLD, pointBorderWidth: 2,
     }],
   };
 
@@ -122,7 +115,7 @@ export default function Dashboard() {
     labels: crimeEntries.map(([k]) => k),
     datasets: [{
       data: crimeEntries.map(([, v]) => v),
-      backgroundColor: crimeEntries.map((_, i) => (i === 0 ? ACCENT : QUIET)),
+      backgroundColor: crimeEntries.map((_, i) => (i === 0 ? GOLD : i < 3 ? '#2A4170' : QUIET)),
       borderRadius: 6, borderSkipped: false, barThickness: 12,
     }],
   };
@@ -140,7 +133,7 @@ export default function Dashboard() {
     labels: workload.map((o) => o.officer.split(' ').slice(-1)[0]),
     datasets: [{
       data: workload.map((o) => o.cases),
-      backgroundColor: ACCENT, hoverBackgroundColor: '#0077ED',
+      backgroundColor: ACCENT, hoverBackgroundColor: GOLD,
       borderRadius: 6, borderSkipped: false, maxBarThickness: 28,
     }],
   };
@@ -150,10 +143,9 @@ export default function Dashboard() {
       <section className="hero" aria-label="Overview">
         <div>
           <div className="hero-eyebrow">{today}</div>
-          <h1 className="hero-title">{greeting()}, {firstName}</h1>
+          <h1 className="hero-title">{greeting()}, <em>{firstName}</em></h1>
           <p className="hero-sub">
-            {stats.open_cases} open investigation{stats.open_cases === 1 ? '' : 's'}. {stats.total_criminals} offender records.
-            
+            <strong>{stats.open_cases}</strong> open investigation{stats.open_cases === 1 ? '' : 's'} · <strong>{stats.total_criminals}</strong> offender records
           </p>
         </div>
         <div className="hero-actions">
@@ -161,7 +153,7 @@ export default function Dashboard() {
           <button type="button" className="btn btn-secondary" onClick={() => exportAnalytics('excel')}>Export Excel</button>
           <button type="button" className="btn btn-secondary" onClick={() => navigate('/criminals')}>Add offender</button>
           {(isAdmin || isOfficer) && (
-            <button type="button" className="btn btn-primary" onClick={() => navigate('/cases')}>New case</button>
+            <button type="button" className="btn btn-gold" onClick={() => navigate('/cases')}>New case</button>
           )}
         </div>
       </section>
@@ -180,7 +172,7 @@ export default function Dashboard() {
         <StatCard icon={Shield} value={stats.total_criminals} label="Offender records" subtext="Registered profiles" onClick={() => navigate('/criminals')} />
         <StatCard icon={FileText} value={stats.total_cases} label="Total cases" subtext="FIR & case files" onClick={() => navigate('/cases')} />
         <StatCard icon={Activity} value={stats.open_cases} label="Open cases" subtext="Awaiting investigation" onClick={() => navigate('/cases?status=open')} />
-        <StatCard icon={AlertTriangle} value={stats.high_risk_criminals} label="High risk" subtext="Officer-recorded score ≥ 75" onClick={() => navigate('/criminals?sort=-prior_convictions')} />
+        <StatCard icon={AlertTriangle} value={stats.high_risk_criminals} label="High risk" alert subtext="Officer-recorded score ≥ 75" onClick={() => navigate('/criminals?sort=-prior_convictions')} />
         <StatCard icon={Brain} value={stats.pending_reviews} label="AI reviews" subtext="Pending human decision" onClick={isClerk ? undefined : () => navigate('/ai-predictions')} />
         <StatCard icon={Siren} value={stats.unread_alerts} label="Unread alerts" subtext="Operational flags for you" onClick={() => navigate('/alerts')} />
       </div>

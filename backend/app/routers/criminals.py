@@ -3,7 +3,7 @@ from difflib import SequenceMatcher
 import secrets
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -12,6 +12,7 @@ from app import models, schemas
 from app.constants import AI_ADVISORY_NOTICE, CRIME_CATEGORIES
 from app.security import require_any_role, require_officer_or_admin, require_clerk_or_officer_or_admin
 from app.utils.audit import create_audit_log
+from app.utils import file_store
 from app.utils.pagination import MAX_PAGE_SIZE, apply_sort, like_term, paginate
 
 router = APIRouter(prefix="/api/criminals", tags=["criminals"])
@@ -260,6 +261,71 @@ async def delete_criminal(
         db.rollback()
         raise
     return {"message": "Criminal record deleted"}
+
+
+@router.put("/{criminal_id}/photo", response_model=schemas.CriminalOut)
+async def upload_criminal_photo(
+    criminal_id: int,
+    file: UploadFile = File(..., description="JPEG, PNG or WebP, at most 5 MB"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_clerk_or_officer_or_admin)
+):
+    criminal = _get_criminal(db, criminal_id)
+    sha256, content_type, size = await file_store.save_upload(
+        file, file_store.IMAGE_TYPES, file_store.MAX_PHOTO_BYTES)
+    previous = criminal.photo_sha256
+    criminal.photo_sha256 = sha256
+    criminal.photo_content_type = content_type
+    db.add(models.CriminalHistory(
+        criminal_id=criminal.id, event_type="photo_updated",
+        description=f"Photo {'replaced' if previous else 'added'} by {current_user.full_name}.",
+        date=datetime.now(timezone.utc), recorded_by=current_user.full_name,
+    ))
+    create_audit_log(db, "CRIMINAL_PHOTO_UPLOADED", actor=current_user, resource_type="criminal", resource_id=criminal.id,
+                     details={"sha256": sha256, "previous_sha256": previous, "content_type": content_type,
+                              "size_bytes": size}, commit=False)
+    db.commit()
+    db.refresh(criminal)
+    return criminal
+
+
+@router.delete("/{criminal_id}/photo", response_model=schemas.CriminalOut)
+async def remove_criminal_photo(
+    criminal_id: int,
+    reason: str = Query(..., min_length=5, max_length=500, description="Why the photo is being removed"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_clerk_or_officer_or_admin)
+):
+    criminal = _get_criminal(db, criminal_id)
+    if not criminal.photo_sha256:
+        raise HTTPException(status_code=404, detail="This record has no photo")
+    previous = criminal.photo_sha256
+    # The file stays in the store: the audit trail can still prove what was shown.
+    criminal.photo_sha256 = None
+    criminal.photo_content_type = None
+    create_audit_log(db, "CRIMINAL_PHOTO_REMOVED", actor=current_user, resource_type="criminal", resource_id=criminal.id,
+                     reason=reason, details={"previous_sha256": previous}, commit=False)
+    db.commit()
+    db.refresh(criminal)
+    return criminal
+
+
+@router.get("/{criminal_id}/photo")
+async def get_criminal_photo(
+    criminal_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_any_role)
+):
+    criminal = _get_criminal(db, criminal_id)
+    if not criminal.photo_sha256:
+        raise HTTPException(status_code=404, detail="This record has no photo")
+    data = file_store.read_verified(criminal.photo_sha256)
+    if data is None:
+        create_audit_log(db, "FILE_INTEGRITY_FAILURE", actor=current_user, resource_type="criminal", resource_id=criminal.id,
+                         status="failure", details={"sha256": criminal.photo_sha256, "kind": "photo"})
+        raise HTTPException(status_code=409, detail="The stored photo is missing or fails its integrity check")
+    return Response(content=data, media_type=criminal.photo_content_type,
+                    headers={"Cache-Control": "private, max-age=86400", "ETag": f'"{criminal.photo_sha256}"'})
 
 
 @router.get("/{criminal_id}/history", response_model=List[schemas.CriminalHistoryItem])

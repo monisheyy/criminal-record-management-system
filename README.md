@@ -12,8 +12,8 @@ Browser (React SPA) ──HTTPS──> nginx ──/api, /api/notifications/ws�
                          static assets                         ML artifacts (signed, verified before load)
 ```
 
-* **Backend** (`backend/`): FastAPI, SQLAlchemy 2, Alembic migrations, PyJWT sessions in HttpOnly cookies, role + object-level authorization, append-only HMAC-signed audit trail, scikit-learn pipeline with quality gates and artifact integrity checks, PDF/Excel reports.
-* **Frontend** (`frontend/`): React 19 + Vite, route-level code splitting and error boundaries, accessible dialogs/tables, server-side pagination.
+* **Backend** (`backend/`): FastAPI, SQLAlchemy 2, Alembic migrations, PyJWT sessions in HttpOnly cookies, role + object-level authorization, append-only HMAC-signed audit trail, scikit-learn pipeline with quality gates and artifact integrity checks, FIR-style PDF and Excel reports, offender photos and evidence files stored write-once under their SHA-256 (re-verified on every read).
+* **Frontend** (`frontend/`): React 19 + Vite, route-level code splitting and error boundaries, accessible dialogs/tables, server-side pagination, and an incident map of India (Leaflet + OpenStreetMap; case locations are placed with a built-in city gazetteer, so no geocoding service sees case data).
 * **Roles:** administrator, investigating officer, record clerk — see [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Quick start (development)
@@ -34,6 +34,8 @@ uvicorn app.main:app --reload --host localhost --port 8000
 
 On first start the database is migrated and (in development) seeded with fictional demo data. Demo accounts — `admin / admin123`, `officer1 / officer123`, `clerk1 / clerk123` — **must change their password at first sign-in**.
 
+Demo offenders come with illustrated sample mugshots (procedurally drawn, stamped "SYNTHETIC ILLUSTRATION"; none shows a real person). Click an offender in the directory to open their photo card. For a database seeded before these existed, run `python -m scripts.seed_sample_photos` from `backend/` once.
+
 ```powershell
 # 3. Frontend (second terminal)
 cd frontend
@@ -46,7 +48,7 @@ Use `localhost` (not `127.0.0.1`) for both servers so the session cookie is same
 ## Tests
 
 ```powershell
-cd backend;  pytest -q                      # 223 tests: API, authorization matrix, security, integrity, migrations, ML
+cd backend;  pytest -q                      # 274 tests: API, authorization matrix, security, integrity, uploads, migrations, ML
 cd frontend; npm run lint; npm test; npm run build
 cd frontend; npx playwright install chromium; npm run test:e2e   # real browser + real API
 .\VERIFY_AI_CRMS.ps1                        # everything above + dependency audits

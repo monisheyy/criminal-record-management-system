@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Network, ZoomIn, ZoomOut, RotateCcw, ExternalLink } from 'lucide-react';
-import { getErrorMessage, intelligenceAPI } from '../services/api';
+import { intelligenceAPI } from '../services/api';
+import { useApiQuery } from '../utils/useApiQuery';
+
+const EMPTY_GRAPH = { nodes: [], edges: [], metadata: null };
 
 const TYPE_META = {
   criminal: { label: 'Criminal', stroke: '#FF3B30' },
@@ -31,24 +34,17 @@ function layoutNodes(nodes, width, height) {
 }
 
 export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, height = 520 }) {
-  const [graph, setGraph] = useState({ nodes: [], edges: [], metadata: null });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const fetchGraph = useCallback(
+    () => intelligenceAPI.network({ criminal_id: criminalId, case_id: caseId, gang_id: gangId, depth }),
+    [criminalId, caseId, gangId, depth],
+  );
+  const { data, loading, error } = useApiQuery(fetchGraph, { fallbackError: 'Unable to load network intelligence.' });
+  const graph = data || EMPTY_GRAPH;
   const [selected, setSelected] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
   const drag = useRef(null);
-
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    setError('');
-    intelligenceAPI.network({ criminal_id: criminalId, case_id: caseId, gang_id: gangId, depth })
-      .then(res => mounted && setGraph(res.data || { nodes: [], edges: [], metadata: null }))
-      .catch(err => mounted && setError(getErrorMessage(err, 'Unable to load network intelligence.')))
-      .finally(() => mounted && setLoading(false));
-    return () => { mounted = false; };
-  }, [criminalId, caseId, gangId, depth]);
 
   const width = 900;
   const positions = useMemo(() => layoutNodes(graph.nodes, width, height), [graph.nodes, height]);
@@ -60,6 +56,7 @@ export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, he
 
   const handlePointerDown = (e) => {
     drag.current = { x: e.clientX, y: e.clientY, pan };
+    setDragging(true);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const handlePointerMove = (e) => {
@@ -69,7 +66,7 @@ export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, he
       y: drag.current.pan.y + e.clientY - drag.current.y,
     });
   };
-  const handlePointerUp = () => { drag.current = null; };
+  const handlePointerUp = () => { drag.current = null; setDragging(false); };
 
   const selectedNode = graph.nodes.find(n => n.id === selected);
 
@@ -112,7 +109,7 @@ export default function NetworkGraph({ criminalId, caseId, gangId, depth = 2, he
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
-            style={{ cursor: drag.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+            style={{ cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}
           >
             <g transform={`translate(${pan.x + width / 2 * (1 - zoom)}, ${pan.y + height / 2 * (1 - zoom)}) scale(${zoom})`}>
               {graph.edges.map(edge => {

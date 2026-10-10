@@ -61,7 +61,11 @@ function ReviewModal({ prediction, status, onClose, onSubmitted }) {
         <AIAdvisoryBanner status={status} compact />
         <div className="stats-grid" style={{ marginTop: 12 }}>
           <div className="stat-card"><span className="stat-label">Suggested category</span><div className="stat-value-sm">{p.predicted_crime_type || '—'}</div>
-            <div className="td-sub">Model score {formatScore(p.crime_type_confidence)} (uncalibrated)</div></div>
+            <div className="td-sub">Model score {formatScore(p.crime_type_confidence)} (uncalibrated)</div>
+            {p.input_features?.crime_type_candidates?.length > 1 && (
+              <div className="td-sub">Top {p.input_features.crime_type_candidates.length}: {p.input_features.crime_type_candidates
+                .map((c) => `${c.crime_type} ${formatScore(c.score / 100)}`).join(' · ')}</div>
+            )}</div>
           <div className="stat-card"><span className="stat-label">Gang association</span><div className="stat-value-sm">
             {p.input_features?.gang_prediction_available === false ? 'Unavailable' : formatScore(p.gang_affiliation_probability)}</div></div>
           <div className="stat-card"><span className="stat-label">Risk score</span><div style={{ marginTop: 4 }}><RiskBadge score={p.risk_score} level={p.risk_level} showBar /></div></div>

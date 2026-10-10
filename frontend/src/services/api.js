@@ -61,6 +61,13 @@ export const saveBlob = (res, fallbackName) => {
   window.URL.revokeObjectURL(url);
 };
 
+/** Wrap a File for a multipart upload (the API reads the field named "file"). */
+const fileForm = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return form;
+};
+
 const clean = (params = {}) =>
   Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== null && v !== undefined));
 
@@ -95,7 +102,12 @@ export const criminalsAPI = {
   addHistory: (id, data) => API.post(`/api/criminals/${id}/history`, data),
   report: (id) => API.get(`/api/criminals/${id}/report`, { responseType: 'blob' }),
   reportExcel: (id) => API.get(`/api/criminals/${id}/report/excel`, { responseType: 'blob' }),
+  uploadPhoto: (id, file) => API.put(`/api/criminals/${id}/photo`, fileForm(file)),
+  removePhoto: (id, reason) => API.delete(`/api/criminals/${id}/photo`, { params: { reason } }),
 };
+
+/** Same-origin URL of an offender photo; `version` (the photo's SHA-256) busts the browser cache. */
+export const criminalPhotoUrl = (id, version) => `${API_BASE}/api/criminals/${id}/photo?v=${version}`;
 
 // ── Cases ────────────────────────────────────────────────────────────────────
 export const casesAPI = {
@@ -107,6 +119,10 @@ export const casesAPI = {
   assign: (caseId, officerId) => API.post(`/api/cases/${caseId}/assign`, { officer_id: Number(officerId) }),
   addEvidence: (caseId, data) => API.post(`/api/cases/${caseId}/evidence`, data),
   updateEvidence: (caseId, evidenceId, data) => API.put(`/api/cases/${caseId}/evidence/${evidenceId}`, data),
+  uploadEvidenceFile: (caseId, evidenceId, file) =>
+    API.post(`/api/cases/${caseId}/evidence/${evidenceId}/file`, fileForm(file)),
+  evidenceFile: (caseId, evidenceId) =>
+    API.get(`/api/cases/${caseId}/evidence/${evidenceId}/file`, { responseType: 'blob' }),
   addVictim: (caseId, data) => API.post(`/api/cases/${caseId}/victims`, data),
   addCriminal: (caseId, criminalId, role) =>
     API.post(`/api/cases/${caseId}/criminals`, { criminal_id: Number(criminalId), role }),
@@ -159,6 +175,7 @@ export const gangsAPI = {
 // ── Intelligence Network ───────────────────────────────────────────────────
 export const intelligenceAPI = {
   network: (params) => API.get('/api/intelligence/network', { params: clean(params) }),
+  incidentMap: (params) => API.get('/api/intelligence/incident-map', { params: clean(params) }),
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────────
