@@ -126,6 +126,33 @@ test('admin sees model governance and a verified audit trail; logout ends the se
   await expect(page).toHaveURL(/\/dashboard$/);
 });
 
+test('clicking an offender opens a pop-up card with their photo and details', async ({ page }) => {
+  await signIn(page, 'officer1');
+  await page.getByRole('link', { name: 'Offender Directory' }).click();
+  await page.getByLabel(/Search/).first().fill('Malhotra');
+  await page.getByRole('button', { name: 'Vikram Malhotra' }).click();
+
+  const card = page.getByRole('dialog', { name: 'Vikram Malhotra' });
+  await expect(card).toBeVisible();
+  const photo = card.getByRole('img', { name: 'Photo of Vikram Malhotra' });
+  await expect(photo).toBeVisible();
+  expect(await photo.evaluate((img) => img.naturalWidth)).toBeGreaterThan(0);
+  await expect(card.getByText('Primary offence')).toBeVisible();
+  await expect(card.getByText('aka “Bichhoo Bhai”')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeHidden();
+
+  await page.getByLabel(/Search/).first().fill('');
+  await page.locator('tbody tr').first().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText(/^1 of \d+$/)).toBeVisible();
+  await page.getByRole('button', { name: 'Next offender' }).click();
+  await expect(page.getByText(/^2 of \d+$/)).toBeVisible();
+  await page.getByRole('link', { name: 'Full record' }).click();
+  await expect(page).toHaveURL(/\/criminals\/\d+$/);
+  await signOut(page);
+});
+
 test('officer sees cases on the incident map and adds an offender photo', async ({ page }) => {
   await signIn(page, 'officer1');
   await page.getByRole('link', { name: 'Incident Map' }).click();

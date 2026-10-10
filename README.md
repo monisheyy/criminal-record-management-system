@@ -34,6 +34,8 @@ uvicorn app.main:app --reload --host localhost --port 8000
 
 On first start the database is migrated and (in development) seeded with fictional demo data. Demo accounts — `admin / admin123`, `officer1 / officer123`, `clerk1 / clerk123` — **must change their password at first sign-in**.
 
+Demo offenders come with illustrated sample mugshots (procedurally drawn, stamped "SYNTHETIC ILLUSTRATION"; none shows a real person). Click an offender in the directory to open their photo card. For a database seeded before these existed, run `python -m scripts.seed_sample_photos` from `backend/` once.
+
 ```powershell
 # 3. Frontend (second terminal)
 cd frontend

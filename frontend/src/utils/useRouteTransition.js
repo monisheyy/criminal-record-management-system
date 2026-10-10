@@ -26,6 +26,10 @@ export function useRouteTransition(location) {
   const timers = useRef([]);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
+  // Path the curtain is currently heading to, and the newest location for it.
+  const targetPath = useRef(null);
+  const latestLocation = useRef(location);
+  latestLocation.current = location;
 
   const clearTimers = () => {
     timers.current.forEach(clearTimeout);
@@ -43,9 +47,15 @@ export function useRouteTransition(location) {
   useEffect(() => {
     // Query-string changes (filters, pagination) stay instant.
     if (location.pathname === displayLocation.pathname) {
+      targetPath.current = null;
       if (location !== displayLocation) setDisplayLocation(location);
       return;
     }
+    // A repeat navigation to the page the curtain is already heading to (for
+    // example a <Navigate> on the outgoing page re-firing) must not restart
+    // the curtain, or it never finishes: the newest location is picked up
+    // when the swap happens.
+    if (location.pathname === targetPath.current) return;
     if (!animate) {
       setDisplayLocation(location);
       return;
@@ -53,14 +63,18 @@ export function useRouteTransition(location) {
     // Already fully covered (first load, or a redirect mid-transition): swap at once.
     const cover = phaseRef.current === 'intro' || phaseRef.current === 'hold' ? 0 : COVER_MS;
     clearTimers();
+    targetPath.current = location.pathname;
     if (cover) setPhase('cover');
     after(cover, () => {
-      setDisplayLocation(location);
+      targetPath.current = null;
+      setDisplayLocation(latestLocation.current);
       window.scrollTo(0, 0);
       setPhase('hold');
     });
-    after(cover + HOLD_MS, () => setPhase('reveal'));
-    after(cover + HOLD_MS + REVEAL_MS, () => setPhase('idle'));
+    // Signing out skips the hold so the sign-in page appears straight away.
+    const hold = location.pathname === '/login' ? 0 : HOLD_MS;
+    after(cover + hold, () => setPhase('reveal'));
+    after(cover + hold + REVEAL_MS, () => setPhase('idle'));
     // displayLocation is deliberately left out: only a new target restarts the curtain.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location, animate]);
